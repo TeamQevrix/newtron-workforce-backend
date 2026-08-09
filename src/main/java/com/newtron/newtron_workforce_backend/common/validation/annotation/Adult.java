@@ -1,0 +1,18 @@
+package com.newtron.newtron_workforce_backend.common.validation.annotation;
+
+import com.newtron.newtron_workforce_backend.common.validation.constants.ValidationMessages;
+import com.newtron.newtron_workforce_backend.common.validation.validator.AdultValidator;
+import jakarta.validation.Constraint;
+import jakarta.validation.Payload;
+
+import java.lang.annotation.*;
+
+@Documented
+@Constraint(validatedBy = AdultValidator.class)
+@Target({ElementType.FIELD, ElementType.PARAMETER})
+@Retention(RetentionPolicy.RUNTIME)
+public @interface Adult {
+    String message() default ValidationMessages.INVALID_AGE;
+    Class<?>[] groups() default {};
+    Class<? extends Payload>[] payload() default {};
+}

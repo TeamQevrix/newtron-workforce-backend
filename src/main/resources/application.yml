@@ -1,0 +1,58 @@
+spring:
+
+  application:
+    name: newtron-workforce
+
+  datasource:
+    url: jdbc:mysql://localhost:3306/newtron_workforce?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Kolkata&characterEncoding=UTF-8
+    username: root
+    password: Ankit@420
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  jpa:
+    open-in-view: false
+
+    hibernate:
+      ddl-auto: update
+
+    show-sql: true
+
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.MySQLDialect
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    validate-on-migrate: false
+    locations: classpath:db/migration
+
+server:
+  port: 8080
+
+app:
+  security:
+    cors:
+      allowed-origins:
+        - "http://localhost:8000"
+        - "http://localhost:64065"
+        - "http://127.0.0.1:8000"
+        - "http://127.0.0.1:64065"
+
+jwt:
+  secret: ${JWT_SECRET:here_is_a_very_long_secure_default_secret_key_which_is_at_least_64_bytes_long_and_supports_hs512_signing_properly_1234567890}
+  access-expiration: 900000 # 15 minutes in ms
+  refresh-expiration: 2592000000 # 30 days in ms
+  issuer: newtron-workforce
+  audience: mobile-app
+
+razorpay:
+  key-id: ${RAZORPAY_KEY_ID:rzp_test_dummykey}
+  key-secret: ${RAZORPAY_KEY_SECRET:dummysecret}
+
+logging:
+  level:
+    org.springframework.security: DEBUG
+    org.hibernate.SQL: DEBUG
+    org.hibernate.orm.jdbc.bind: TRACE
