@@ -36,6 +36,30 @@ public class AuthController {
                 RequestContext.getRequestId(), httpServletRequest.getRequestURI(), startTime);
     }
 
+    @PostMapping("/register")
+    public ApiResponse<UserResponse> register(
+            @Valid @RequestBody RegisterRequest request,
+            HttpServletRequest httpServletRequest) {
+        long startTime = getStartTime(httpServletRequest);
+        
+        UserResponse response = authService.register(request);
+        
+        return ApiResponseFactory.success(response, "User registered successfully", 
+                RequestContext.getRequestId(), httpServletRequest.getRequestURI(), startTime);
+    }
+
+    @PostMapping("/login")
+    public ApiResponse<AuthResponse> login(
+            @Valid @RequestBody LoginRequest request,
+            HttpServletRequest httpServletRequest) {
+        long startTime = getStartTime(httpServletRequest);
+        
+        AuthResponse response = authService.login(request);
+        
+        return ApiResponseFactory.success(response, "User logged in successfully", 
+                RequestContext.getRequestId(), httpServletRequest.getRequestURI(), startTime);
+    }
+
     @PostMapping("/verify-otp")
     public ApiResponse<AuthResponse> verifyOtp(
             @Valid @RequestBody VerifyOtpRequest request,

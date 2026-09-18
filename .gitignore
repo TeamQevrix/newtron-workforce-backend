@@ -34,3 +34,12 @@ build/
 
 hs_err_pid*.log
 logs/
+
+(
+echo.
+echo ### Newtron Workforce runtime/local files ###
+echo uploads/
+echo *.log
+echo temp.txt
+echo src/test/**/*.class
+) >> .gitignore*.class

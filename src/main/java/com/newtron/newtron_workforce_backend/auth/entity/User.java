@@ -45,6 +45,10 @@ public class User {
     @Column(length = 255)
     private String password;
 
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    @Column(name = "password_hash", length = 255)
+    private String passwordHash;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private Role role;

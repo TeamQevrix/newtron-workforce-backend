@@ -51,6 +51,14 @@ public class WorkerProfile extends BaseEntity {
     @Builder.Default
     private Boolean isCompleted = false;
 
+    @Column(name = "preparation_progress", nullable = false)
+    @Builder.Default
+    private Integer preparationProgress = 0;
+
+    @Column(name = "preparation_step", nullable = false, length = 50)
+    @Builder.Default
+    private String preparationStep = "PROFILE_CREATING";
+
     @Column(name = "emergency_contact", length = 20)
     private String emergencyContact;
 

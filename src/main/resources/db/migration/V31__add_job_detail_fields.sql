@@ -1,0 +1,5 @@
+ALTER TABLE jobs
+ADD COLUMN experience_required VARCHAR(255),
+ADD COLUMN shift_hours VARCHAR(255),
+ADD COLUMN benefits VARCHAR(1000),
+ADD COLUMN joining_date VARCHAR(255);

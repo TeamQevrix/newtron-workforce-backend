@@ -20,6 +20,8 @@ import com.newtron.newtron_workforce_backend.auth.entity.User;
 import com.newtron.newtron_workforce_backend.auth.repository.UserRepository;
 import com.newtron.newtron_workforce_backend.entity.WorkerProfile;
 import com.newtron.newtron_workforce_backend.repository.WorkerProfileRepository;
+import com.newtron.newtron_workforce_backend.entity.WorkerMembership;
+import com.newtron.newtron_workforce_backend.repository.WorkerMembershipRepository;
 import com.newtron.newtron_workforce_backend.security.jwt.JwtConstants;
 import com.newtron.newtron_workforce_backend.security.jwt.JwtPrincipal;
 import com.newtron.newtron_workforce_backend.security.jwt.JwtProperties;
@@ -37,6 +39,8 @@ import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.*;
 
+import org.springframework.security.crypto.password.PasswordEncoder;
+
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -50,6 +54,9 @@ public class AuthServiceImpl implements AuthService {
     private final JwtProperties jwtProperties;
     private final IpRateLimiter ipRateLimiter;
     private final WorkerProfileRepository workerProfileRepository;
+    private final WorkerMembershipRepository workerMembershipRepository;
+    private final com.newtron.newtron_workforce_backend.repository.TeamRepository teamRepository;
+    private final PasswordEncoder passwordEncoder;
 
     @Override
     @Transactional
@@ -192,6 +199,10 @@ public class AuthServiceImpl implements AuthService {
             onboardingStep = user.getProfileCompleted() ? "COMPLETED" : "BASIC_PROFILE";
         }
 
+        boolean isCompleted = isUserProfileCompleted(user);
+
+        String membershipPlan = getMembershipPlan(user);
+
         return AuthResponse.builder()
                 .accessToken(accessToken)
                 .refreshToken(refreshToken)
@@ -200,10 +211,11 @@ public class AuthServiceImpl implements AuthService {
                 .userId(user.getId())
                 .role(user.getRole().name())
                 .isNewUser(request.getPurpose() == com.newtron.newtron_workforce_backend.auth.otp.entity.OtpPurpose.SIGNUP)
-                .profileCompleted(user.getProfileCompleted())
+                .profileCompleted(isCompleted)
                 .verificationCompleted(user.getMobileVerified())
                 .membershipStatus(user.getMembershipActive() ? "ACTIVE" : "INACTIVE")
-                .requiresOnboarding(!user.getProfileCompleted())
+                .membershipPlan(membershipPlan)
+                .requiresOnboarding(!isCompleted)
                 .displayName(user.getFullName())
                 .profilePhoto(null)
                 .workerId(null)
@@ -269,6 +281,10 @@ public class AuthServiceImpl implements AuthService {
 
         userSessionRepository.save(newSession);
 
+        boolean isCompleted = isUserProfileCompleted(user);
+
+        String membershipPlan = getMembershipPlan(user);
+
         return AuthResponse.builder()
                 .accessToken(newAccessToken)
                 .refreshToken(newRefreshToken)
@@ -276,10 +292,11 @@ public class AuthServiceImpl implements AuthService {
                 .expiresIn(jwtProperties.getAccessExpiration() / 1000)
                 .userId(user.getId())
                 .role(user.getRole().name())
-                .profileCompleted(user.getProfileCompleted())
+                .profileCompleted(isCompleted)
                 .verificationCompleted(user.getMobileVerified())
                 .membershipStatus(user.getMembershipActive() ? "ACTIVE" : "INACTIVE")
-                .requiresOnboarding(!user.getProfileCompleted())
+                .membershipPlan(membershipPlan)
+                .requiresOnboarding(!isCompleted)
                 .displayName(user.getFullName())
                 .build();
     }
@@ -325,17 +342,31 @@ public class AuthServiceImpl implements AuthService {
             onboardingStep = currentUser.getProfileCompleted() ? "COMPLETED" : "BASIC_PROFILE";
         }
 
+        boolean isCompleted = isUserProfileCompleted(currentUser);
+        String membershipPlan = getMembershipPlan(currentUser);
+
         return CurrentUserResponse.builder()
                 .userId(currentUser.getId())
                 .role(currentUser.getRole().name())
                 .mobile(currentUser.getMobile())
                 .accountStatus(currentUser.getStatus().name())
                 .membershipStatus(currentUser.getMembershipActive() ? "ACTIVE" : "INACTIVE")
+                .membershipPlan(membershipPlan)
                 .verificationStatus(currentUser.getMobileVerified() ? "VERIFIED" : "UNVERIFIED")
-                .profileCompletion(currentUser.getProfileCompleted() ? 100.0 : 0.0)
+                .profileCompletion(isCompleted ? 100.0 : 0.0)
+                .profileCompleted(isCompleted)
                 .onboardingStep(onboardingStep)
                 .lastLogin(Instant.now())
                 .build();
+    }
+
+    private boolean isUserProfileCompleted(User user) {
+        if (user.getRole() == Role.WORKER) {
+            return workerProfileRepository.findByUserId(user.getId())
+                    .map(WorkerProfile::getIsCompleted)
+                    .orElse(false);
+        }
+        return Boolean.TRUE.equals(user.getProfileCompleted());
     }
 
     private String hashToken(String token) {
@@ -354,5 +385,200 @@ public class AuthServiceImpl implements AuthService {
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException("SHA-256 not supported", e);
         }
+    }
+
+    @Override
+    @Transactional
+    public UserResponse register(RegisterRequest request) {
+        // 1. Validate password confirmation
+        if (request.getPassword() == null || !request.getPassword().equals(request.getConfirmPassword())) {
+            throw new BusinessException("PASSWORD_MISMATCH", "Password and confirm password do not match");
+        }
+
+        // 2. Validate role constraint
+        if (request.getRole() == Role.ADMIN) {
+            throw new BusinessException("INVALID_ROLE", "Registration as ADMIN is not allowed");
+        }
+
+        // 3. Format and check duplicate mobile
+        String fullMobile = request.getMobileCountryCode() + request.getMobileNumber();
+        if (userRepository.existsByMobile(fullMobile)) {
+            throw new ConflictException("DUPLICATE_MOBILE", "An account already exists with this mobile number");
+        }
+
+        // 4. Handle optional email check
+        String email = request.getEmail();
+        if (email != null && !email.trim().isEmpty()) {
+            email = email.trim().toLowerCase();
+            if (userRepository.existsByEmail(email)) {
+                throw new ConflictException("DUPLICATE_EMAIL", "An account already exists with this email address");
+            }
+        } else {
+            email = null;
+        }
+
+        // 5. Hash password and build entity
+        String encodedPassword = passwordEncoder.encode(request.getPassword());
+        User user = User.builder()
+                .uuid(UUID.randomUUID().toString())
+                .fullName(request.getFullName().trim())
+                .mobile(fullMobile)
+                .email(email)
+                .password(null) // Keep legacy password untouched (NULL)
+                .passwordHash(encodedPassword)
+                .role(request.getRole())
+                .status(com.newtron.newtron_workforce_backend.auth.enums.UserStatus.ACTIVE)
+                .profileCompleted(false)
+                .mobileVerified(true)
+                .tokenVersion(0L)
+                .build();
+
+        User savedUser = userRepository.save(user);
+
+        // 6. Audit log registration
+        AuditLogger.logAction("USER_REGISTERED", savedUser.getId().toString(), "Role: " + savedUser.getRole().name());
+
+        // 7. Map to safe response DTO
+        return UserResponse.builder()
+                .uuid(savedUser.getUuid())
+                .fullName(savedUser.getFullName())
+                .mobile(savedUser.getMobile())
+                .email(savedUser.getEmail())
+                .role(savedUser.getRole())
+                .status(savedUser.getStatus())
+                .profileCompleted(savedUser.getProfileCompleted())
+                .build();
+    }
+
+    @Override
+    @Transactional
+    public AuthResponse login(LoginRequest request) {
+        String identifier = request.getIdentifier().trim();
+        Optional<User> userOpt;
+
+        // 1. Identify and lookup user
+        if (identifier.contains("@")) {
+            userOpt = userRepository.findByEmail(identifier.toLowerCase());
+        } else {
+            String fullMobile;
+            if (identifier.startsWith("+")) {
+                fullMobile = identifier;
+            } else if (identifier.length() == 10 && identifier.matches("^\\d+$")) {
+                fullMobile = "+91" + identifier;
+            } else {
+                fullMobile = identifier;
+            }
+            userOpt = userRepository.findByMobile(fullMobile);
+        }
+
+        if (userOpt.isEmpty()) {
+            throw new UnauthorizedException("INVALID_CREDENTIALS", "Invalid credentials");
+        }
+
+        User user = userOpt.get();
+
+        // 2. Verify password_hash exists (prevent OTP-only user password login) and matches
+        if (user.getPasswordHash() == null || 
+                !passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
+            throw new UnauthorizedException("INVALID_CREDENTIALS", "Invalid credentials");
+        }
+
+        // 3. Establish User Session (reusing existing token/session flow)
+        String sessionId = UUID.randomUUID().toString();
+        DeviceInfoDto deviceInfo = request.getDeviceInformation();
+
+        JwtPrincipal principal = JwtPrincipal.builder()
+                .userId(user.getId())
+                .mobile(user.getMobile())
+                .authorities(List.of(new SimpleGrantedAuthority("ROLE_" + user.getRole().name())))
+                .deviceId(deviceInfo.getDeviceId())
+                .sessionId(sessionId)
+                .tokenVersion(user.getTokenVersion())
+                .userType(user.getRole().name())
+                .build();
+
+        String accessToken = jwtTokenProvider.generateAccessToken(principal);
+        String refreshToken = jwtTokenProvider.generateRefreshToken(user.getMobile(), deviceInfo.getDeviceId(), sessionId);
+        String tokenHash = hashToken(refreshToken);
+
+        // Deactivate previous active sessions for the same device
+        userSessionRepository.findByUserIdAndDeviceIdAndActiveTrue(user.getId(), deviceInfo.getDeviceId())
+                .ifPresent(prevSession -> {
+                    prevSession.setActive(false);
+                    userSessionRepository.save(prevSession);
+                });
+
+        UserSession session = UserSession.builder()
+                .user(user)
+                .refreshTokenHash(tokenHash)
+                .deviceId(deviceInfo.getDeviceId())
+                .deviceName(deviceInfo.getDeviceName())
+                .deviceType(deviceInfo.getDeviceType())
+                .osVersion(deviceInfo.getOsVersion())
+                .appVersion(deviceInfo.getAppVersion())
+                .fcmToken(deviceInfo.getFcmToken())
+                .active(true)
+                .lastActivityAt(Instant.now())
+                .build();
+
+        userSessionRepository.save(session);
+        AuditLogger.logAction("USER_LOGGED_IN", user.getId().toString(), "Device: " + deviceInfo.getDeviceId());
+
+        // 4. Map to matching AuthResponse DTO format
+        boolean isCompleted = isUserProfileCompleted(user);
+        String membershipPlan = getMembershipPlan(user);
+
+        return AuthResponse.builder()
+                .accessToken(accessToken)
+                .refreshToken(refreshToken)
+                .tokenType("Bearer")
+                .expiresIn(jwtProperties.getAccessExpiration() / 1000)
+                .userId(user.getId())
+                .role(user.getRole().name())
+                .isNewUser(false)
+                .profileCompleted(isCompleted)
+                .verificationCompleted(user.getMobileVerified())
+                .membershipStatus(user.getMembershipActive() ? "ACTIVE" : "INACTIVE")
+                .membershipPlan(membershipPlan)
+                .requiresOnboarding(!isCompleted)
+                .displayName(user.getFullName())
+                .profilePhoto(null)
+                .build();
+    }
+
+    private void syncProfileCompletedFlag(User user) {
+        if (Boolean.TRUE.equals(user.getProfileCompleted())) {
+            return; // Already synced
+        }
+        if (user.getRole() == Role.WORKER) {
+            workerProfileRepository.findByUserId(user.getId()).ifPresent(wp -> {
+                boolean shouldUpdate = false;
+                if (Boolean.TRUE.equals(wp.getIsCompleted())) {
+                    shouldUpdate = true;
+                } else {
+                    boolean hasTeam = teamRepository.existsByOwnerWorkerProfileIdAndDeletedFalse(wp.getId());
+                    if (hasTeam) {
+                        wp.setIsCompleted(true);
+                        workerProfileRepository.save(wp);
+                        shouldUpdate = true;
+                    }
+                }
+                
+                if (shouldUpdate) {
+                    user.setProfileCompleted(true);
+                    userRepository.save(user);
+                }
+            });
+        }
+    }
+
+    private String getMembershipPlan(User user) {
+        if (user.getRole() == Role.WORKER && Boolean.TRUE.equals(user.getMembershipActive())) {
+            return workerProfileRepository.findByUserId(user.getId())
+                    .flatMap(wp -> workerMembershipRepository.findByWorkerProfileId(wp.getId()))
+                    .map(WorkerMembership::getPlan)
+                    .orElse(null);
+        }
+        return null;
     }
 }

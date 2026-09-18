@@ -20,7 +20,7 @@ public class AuthResponse {
     private Boolean profileCompleted;
     private Boolean verificationCompleted;
     private String membershipStatus;
-
+    private String membershipPlan;
     private Boolean requiresOnboarding;
 
     private String displayName;

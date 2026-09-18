@@ -10,4 +10,7 @@ import java.util.List;
 public interface WorkerSkillRepository extends JpaRepository<WorkerSkill, Long> {
     List<WorkerSkill> findByWorkerProfileId(Long workerProfileId);
     void deleteByWorkerProfileId(Long workerProfileId);
+
+    @org.springframework.data.jpa.repository.Query("SELECT s FROM WorkerSkill s JOIN FETCH s.skill WHERE s.workerProfile.user.id IN :workerIds AND s.isPrimary = true")
+    List<WorkerSkill> findPrimarySkillsByWorkerIds(@org.springframework.data.repository.query.Param("workerIds") List<Long> workerIds);
 }

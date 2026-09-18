@@ -197,12 +197,6 @@ public class WorkerDocumentController {
         User currentUser = fetchCurrentUser(userDetails);
         WorkerProfile profile = fetchWorkerProfile(currentUser);
 
-        // Verify that Aadhaar is uploaded
-        boolean hasAadhaar = workerDocumentRepository.existsByWorkerProfileIdAndDocumentType(profile.getId(), AADHAAR_DOC_TYPE);
-        if (!hasAadhaar) {
-            throw new com.newtron.newtron_workforce_backend.common.exception.ValidationException("AADHAAR_REQUIRED", "Aadhaar Card is required to proceed");
-        }
-
         // Save Emergency Contact
         if (request.getEmergencyContact() == null || request.getEmergencyContact().trim().length() != 10) {
             throw new com.newtron.newtron_workforce_backend.common.exception.ValidationException("INVALID_EMERGENCY_CONTACT", "Valid 10-digit emergency contact is required");

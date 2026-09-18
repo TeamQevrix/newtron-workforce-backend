@@ -1,0 +1,1 @@
+ALTER TABLE jobs ADD COLUMN company_name VARCHAR(255) NULL;

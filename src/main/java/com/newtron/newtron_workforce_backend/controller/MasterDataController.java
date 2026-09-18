@@ -40,6 +40,24 @@ public class MasterDataController {
         return qualificationRepository.findAll();
     }
 
+    @GetMapping("/genders")
+    public List<IdNameModel> getGenders() {
+        return List.of(
+            new IdNameModel(1, "Male"),
+            new IdNameModel(2, "Female"),
+            new IdNameModel(3, "Other")
+        );
+    }
+
+    @GetMapping("/employment-types")
+    public List<IdNameModel> getEmploymentTypes() {
+        return List.of(
+            new IdNameModel(1, "Full Time"),
+            new IdNameModel(2, "Part Time"),
+            new IdNameModel(3, "Contract")
+        );
+    }
+
     @GetMapping("/states")
     public List<IdNameModel> getStates() {
         return jdbcTemplate.query(

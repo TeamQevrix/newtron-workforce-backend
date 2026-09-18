@@ -3,6 +3,7 @@ package com.newtron.newtron_workforce_backend.entity;
 import com.newtron.newtron_workforce_backend.auth.entity.User;
 import jakarta.persistence.*;
 import lombok.*;
+import java.time.Instant;
 
 @Entity
 @Table(name = "applications")
@@ -25,8 +26,18 @@ public class Application {
     @JoinColumn(name = "worker_id")
     private User worker;
 
-    private String status; // "Applied", "Shortlisted", "Rejected", "Hired"
+    @ManyToOne
+    @JoinColumn(name = "team_id")
+    private Team team;
+
+    private String status; // "Applied", "Shortlisted", "Rejected", "Hired", "Completed"
     private String appliedDate;
     private Integer currentStep; // 1-4
     private String declineReason;
+
+    @Column(name = "hired_at")
+    private Instant hiredAt;
+
+    @Column(name = "completed_at")
+    private Instant completedAt;
 }

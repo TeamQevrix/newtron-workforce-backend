@@ -32,6 +32,9 @@ server:
   port: 8080
 
 app:
+  base-url: ${APP_BASE_URL:http://localhost:8080}
+  file-storage:
+    base-path: ${FILE_STORAGE_PATH:./uploads}
   security:
     cors:
       allowed-origins:
@@ -48,8 +51,8 @@ jwt:
   audience: mobile-app
 
 razorpay:
-  key-id: ${RAZORPAY_KEY_ID:rzp_test_dummykey}
-  key-secret: ${RAZORPAY_KEY_SECRET:dummysecret}
+  key-id: ${RAZORPAY_KEY_ID:dummy}
+  key-secret: ${RAZORPAY_KEY_SECRET:dummy}
 
 logging:
   level:

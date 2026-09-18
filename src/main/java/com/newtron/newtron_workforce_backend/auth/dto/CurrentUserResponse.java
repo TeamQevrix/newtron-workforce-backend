@@ -13,8 +13,10 @@ public class CurrentUserResponse {
     private String mobile;
     private String accountStatus;
     private String membershipStatus;
+    private String membershipPlan;
     private String verificationStatus;
     private Double profileCompletion;
+    private Boolean profileCompleted;
     private String onboardingStep;
     private Instant lastLogin;
 }

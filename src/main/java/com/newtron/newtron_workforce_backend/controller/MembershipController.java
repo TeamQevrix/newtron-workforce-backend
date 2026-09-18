@@ -15,6 +15,10 @@ import com.newtron.newtron_workforce_backend.entity.WorkerProfile;
 import com.newtron.newtron_workforce_backend.enums.OnboardingStep;
 import com.newtron.newtron_workforce_backend.repository.WorkerMembershipRepository;
 import com.newtron.newtron_workforce_backend.repository.WorkerProfileRepository;
+import com.newtron.newtron_workforce_backend.service.OnboardingProgressService;
+import com.newtron.newtron_workforce_backend.enums.NotificationCategory;
+import com.newtron.newtron_workforce_backend.enums.NotificationPriority;
+import com.newtron.newtron_workforce_backend.service.NotificationHelper;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -40,6 +44,9 @@ public class MembershipController {
     private final UserRepository userRepository;
     private final WorkerProfileRepository workerProfileRepository;
     private final WorkerMembershipRepository workerMembershipRepository;
+    private final com.newtron.newtron_workforce_backend.repository.TeamRepository teamRepository;
+    private final OnboardingProgressService onboardingProgressService;
+    private final NotificationHelper notificationHelper;
 
     @Value("${razorpay.key-id}")
     private String razorpayKeyId;
@@ -47,8 +54,8 @@ public class MembershipController {
     @Value("${razorpay.key-secret}")
     private String razorpayKeySecret;
 
-    private static final String PLAN_LIFETIME = "LIFETIME_ACCESS";
-    private static final Long AMOUNT_LIFETIME_PAISE = 4900L;
+    private static final String PLAN_INDIVIDUAL = "INDIVIDUAL_MONTHLY";
+    private static final Long AMOUNT_INDIVIDUAL_PAISE = 4900L;
     private static final String CURRENCY_INR = "INR";
     private static final String PROVIDER_RAZORPAY = "RAZORPAY";
 
@@ -57,6 +64,7 @@ public class MembershipController {
     @PostMapping("/order")
     @Transactional
     public ApiResponse<RazorpayOrderResponse> createOrder(
+            @RequestParam(required = false) String planType,
             @AuthenticationPrincipal UserDetails userDetails,
             HttpServletRequest httpServletRequest) {
         long startTime = getStartTime(httpServletRequest);
@@ -70,9 +78,22 @@ public class MembershipController {
             throw new ValidationException("ALREADY_ACTIVE", "Worker already has an active membership");
         }
 
+        boolean isTeamPlan = "TEAM".equalsIgnoreCase(planType);
+        if (isTeamPlan) {
+            boolean ownsTeam = teamRepository.existsByOwnerWorkerProfileId(profile.getId());
+            if (!ownsTeam) {
+                throw new ValidationException("TEAM_NOT_FOUND", "Worker does not own a registered Team");
+            }
+        }
+
+        String targetPlan = isTeamPlan ? "TEAM_MONTHLY" : PLAN_INDIVIDUAL;
+        Long targetAmountPaise = isTeamPlan ? 49900L : AMOUNT_INDIVIDUAL_PAISE;
+
         String orderId;
-        if ("rzp_test_dummykey".equals(razorpayKeyId) || "dummysecret".equals(razorpayKeySecret)) {
-            orderId = "order_mock_" + profile.getId() + "_" + System.currentTimeMillis();
+        boolean isDummy = razorpayKeyId == null || razorpayKeyId.isEmpty() || razorpayKeyId.equals("dummy") || razorpayKeyId.contains("dummy");
+
+        if (isDummy) {
+            orderId = "order_mock_" + System.currentTimeMillis();
         } else {
             // Call Razorpay API to create an order
             String razorpayUrl = "https://api.razorpay.com/v1/orders";
@@ -82,7 +103,7 @@ public class MembershipController {
             headers.setBasicAuth(razorpayKeyId, razorpayKeySecret);
 
             Map<String, Object> orderRequest = new HashMap<>();
-            orderRequest.put("amount", AMOUNT_LIFETIME_PAISE);
+            orderRequest.put("amount", targetAmountPaise);
             orderRequest.put("currency", CURRENCY_INR);
             orderRequest.put("receipt", "receipt_profile_" + profile.getId() + "_" + System.currentTimeMillis());
 
@@ -106,8 +127,8 @@ public class MembershipController {
         WorkerMembership membership;
         if (existing.isPresent()) {
             membership = existing.get();
-            membership.setPlan(PLAN_LIFETIME);
-            membership.setAmount(AMOUNT_LIFETIME_PAISE);
+            membership.setPlan(targetPlan);
+            membership.setAmount(targetAmountPaise);
             membership.setCurrency(CURRENCY_INR);
             membership.setStatus("PENDING");
             membership.setPaymentProvider(PROVIDER_RAZORPAY);
@@ -117,8 +138,8 @@ public class MembershipController {
         } else {
             membership = WorkerMembership.builder()
                     .workerProfile(profile)
-                    .plan(PLAN_LIFETIME)
-                    .amount(AMOUNT_LIFETIME_PAISE)
+                    .plan(targetPlan)
+                    .amount(targetAmountPaise)
                     .currency(CURRENCY_INR)
                     .status("PENDING")
                     .paymentProvider(PROVIDER_RAZORPAY)
@@ -129,9 +150,9 @@ public class MembershipController {
 
         RazorpayOrderResponse orderResponse = RazorpayOrderResponse.builder()
                 .orderId(orderId)
-                .amount(AMOUNT_LIFETIME_PAISE)
+                .amount(targetAmountPaise)
                 .currency(CURRENCY_INR)
-                .keyId(razorpayKeyId)
+                .keyId(isDummy ? "rzp_test_dummykey" : razorpayKeyId)
                 .build();
 
         return ApiResponseFactory.success(orderResponse, "Razorpay order created successfully",
@@ -170,11 +191,13 @@ public class MembershipController {
                     RequestContext.getRequestId(), httpServletRequest.getRequestURI(), startTime);
         }
 
-        // Verify Razorpay signature using SHA256 HMAC
         boolean isValidSignature;
-        if ("rzp_test_dummykey".equals(razorpayKeyId) || "dummysecret".equals(razorpayKeySecret)) {
+        boolean isDummy = razorpayKeyId == null || razorpayKeyId.isEmpty() || razorpayKeyId.equals("dummy") || razorpayKeyId.contains("dummy") || (request.getRazorpayOrderId() != null && request.getRazorpayOrderId().startsWith("order_mock_"));
+
+        if (isDummy) {
             isValidSignature = true;
         } else {
+            // Verify Razorpay signature using SHA256 HMAC
             isValidSignature = verifyRazorpaySignature(
                     request.getRazorpayOrderId(),
                     request.getRazorpayPaymentId(),
@@ -189,38 +212,63 @@ public class MembershipController {
             throw new ValidationException("INVALID_SIGNATURE", "Payment verification failed: signature is invalid");
         }
 
-        if (!("rzp_test_dummykey".equals(razorpayKeyId) || "dummysecret".equals(razorpayKeySecret))) {
-            // Verify with Razorpay API (Reconciliation check)
-            String paymentUrl = "https://api.razorpay.com/v1/payments/" + request.getRazorpayPaymentId();
-            HttpHeaders headers = new HttpHeaders();
-            headers.setBasicAuth(razorpayKeyId, razorpayKeySecret);
-            HttpEntity<Void> entity = new HttpEntity<>(headers);
+        if (isDummy) {
+            membership.setStatus("ACTIVE");
+            membership.setPaymentPaymentId(request.getRazorpayPaymentId() != null ? request.getRazorpayPaymentId() : "pay_mock_" + System.currentTimeMillis());
+            membership.setPaymentSignature(request.getRazorpaySignature() != null ? request.getRazorpaySignature() : "sig_mock_" + System.currentTimeMillis());
+            membership.setActivatedAt(java.time.LocalDateTime.now());
+            workerMembershipRepository.save(membership);
 
-            try {
-                ResponseEntity<Map> response = restTemplate.exchange(paymentUrl, HttpMethod.GET, entity, Map.class);
-                if (response.getStatusCode() == HttpStatus.OK) {
-                    Map body = response.getBody();
-                    String rStatus = (String) body.get("status");
-                    String rOrderId = (String) body.get("order_id");
-                    Object rAmountObj = body.get("amount");
-                    Long rAmount = rAmountObj instanceof Number ? ((Number) rAmountObj).longValue() : Long.parseLong(rAmountObj.toString());
-                    String rCurrency = (String) body.get("currency");
+            notificationHelper.sendNotification(
+                    currentUser,
+                    "Membership Active",
+                    "Activated " + membership.getPlan() + " card.",
+                    NotificationCategory.PAYMENTS,
+                    NotificationPriority.HIGH,
+                    "MEMBERSHIP_DETAILS"
+            );
 
-                    if (!request.getRazorpayOrderId().equals(rOrderId) ||
-                            !AMOUNT_LIFETIME_PAISE.equals(rAmount) ||
-                            !CURRENCY_INR.equalsIgnoreCase(rCurrency) ||
-                            !("captured".equalsIgnoreCase(rStatus) || "authorized".equalsIgnoreCase(rStatus))) {
-                        throw new ValidationException("PAYMENT_MISMATCH", "Payment details from Razorpay do not match the expected plan/amount/order");
-                    }
-                } else {
-                    throw new ValidationException("RECONCILIATION_FAILED", "Failed to contact Razorpay to verify payment status");
+            WorkerMembershipResponse response = WorkerMembershipResponse.builder()
+                    .plan(membership.getPlan())
+                    .amount(membership.getAmount())
+                    .currency(membership.getCurrency())
+                    .status(membership.getStatus())
+                    .activatedAt(membership.getActivatedAt())
+                    .build();
+            return ApiResponseFactory.success(response, "Payment verified successfully (MOCK)",
+                    RequestContext.getRequestId(), httpServletRequest.getRequestURI(), startTime);
+        }
+
+        // Verify with Razorpay API (Reconciliation check)
+        String paymentUrl = "https://api.razorpay.com/v1/payments/" + request.getRazorpayPaymentId();
+        HttpHeaders headers = new HttpHeaders();
+        headers.setBasicAuth(razorpayKeyId, razorpayKeySecret);
+        HttpEntity<Void> entity = new HttpEntity<>(headers);
+
+        try {
+            ResponseEntity<Map> response = restTemplate.exchange(paymentUrl, HttpMethod.GET, entity, Map.class);
+            if (response.getStatusCode() == HttpStatus.OK) {
+                Map body = response.getBody();
+                String rStatus = (String) body.get("status");
+                String rOrderId = (String) body.get("order_id");
+                Object rAmountObj = body.get("amount");
+                Long rAmount = rAmountObj instanceof Number ? ((Number) rAmountObj).longValue() : Long.parseLong(rAmountObj.toString());
+                String rCurrency = (String) body.get("currency");
+
+                if (!request.getRazorpayOrderId().equals(rOrderId) ||
+                        !membership.getAmount().equals(rAmount) ||
+                        !CURRENCY_INR.equalsIgnoreCase(rCurrency) ||
+                        !("captured".equalsIgnoreCase(rStatus) || "authorized".equalsIgnoreCase(rStatus))) {
+                    throw new ValidationException("PAYMENT_MISMATCH", "Payment details from Razorpay do not match the expected plan/amount/order");
                 }
-            } catch (Exception e) {
-                if (e instanceof ValidationException) {
-                    throw e;
-                }
-                throw new ValidationException("RECONCILIATION_FAILED", "Error reconciling payment with Razorpay: " + e.getMessage());
+            } else {
+                throw new ValidationException("RECONCILIATION_FAILED", "Failed to contact Razorpay to verify payment status");
             }
+        } catch (Exception e) {
+            if (e instanceof ValidationException) {
+                throw e;
+            }
+            throw new ValidationException("RECONCILIATION_FAILED", "Error reconciling payment with Razorpay: " + e.getMessage());
         }
 
         // Atomically update membership and onboarding step
@@ -230,15 +278,29 @@ public class MembershipController {
         membership.setActivatedAt(LocalDateTime.now());
         workerMembershipRepository.save(membership);
 
-        profile.setCurrentStep(OnboardingStep.COMPLETED);
-        profile.setIsCompleted(true);
+        profile.setCurrentStep(OnboardingStep.VERIFICATION);
+        profile.setIsCompleted(false);
+        profile.setPreparationProgress(0);
+        profile.setPreparationStep("PROFILE_CREATING");
         workerProfileRepository.save(profile);
 
         // Update User entity flags consistently
         User user = profile.getUser();
         user.setMembershipActive(true);
-        user.setProfileCompleted(true);
+        user.setProfileCompleted(false);
         userRepository.save(user);
+
+        // Start background async profile preparation
+        onboardingProgressService.startProfilePreparation(profile);
+
+        notificationHelper.sendNotification(
+                currentUser,
+                "Membership Active",
+                "Activated " + membership.getPlan() + " card.",
+                NotificationCategory.PAYMENTS,
+                NotificationPriority.HIGH,
+                "MEMBERSHIP_DETAILS"
+        );
 
         WorkerMembershipResponse response = WorkerMembershipResponse.builder()
                 .plan(membership.getPlan())

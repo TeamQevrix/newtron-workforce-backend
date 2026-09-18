@@ -38,4 +38,24 @@ public class WorkerBasicProfileResponse {
     private Instant createdAt;
 
     private Instant lastUpdatedAt;
+
+    private String email;
+
+    private String phone;
+
+    private String addressSummary;
+
+    private String mainSkill;
+
+    private String experienceYears;
+
+    private String rating;
+
+    private String jobsCompleted;
+
+    private String membershipType;
+
+    private String membershipExpiry;
+
+    private Boolean verified;
 }

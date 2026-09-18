@@ -6,5 +6,6 @@ public enum OnboardingStep {
     ADDRESS,
     DOCUMENTS,
     MEMBERSHIP,
+    VERIFICATION,
     COMPLETED
 }

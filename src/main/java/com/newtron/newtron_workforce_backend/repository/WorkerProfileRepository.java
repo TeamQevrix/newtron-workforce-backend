@@ -25,4 +25,7 @@ public interface WorkerProfileRepository extends JpaRepository<WorkerProfile, Lo
 
     @Query("SELECT wp FROM WorkerProfile wp WHERE wp.user.mobile = :mobile AND wp.deleted = false")
     Optional<WorkerProfile> findByUserMobile(@Param("mobile") String mobile);
+
+    @Query("SELECT wp FROM WorkerProfile wp WHERE wp.user.id IN :userIds AND wp.deleted = false")
+    java.util.List<WorkerProfile> findByUserIds(@Param("userIds") java.util.List<Long> userIds);
 }

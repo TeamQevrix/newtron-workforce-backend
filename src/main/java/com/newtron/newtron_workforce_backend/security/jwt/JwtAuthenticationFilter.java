@@ -36,8 +36,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             throws ServletException, IOException {
 
         String authHeader = request.getHeader(JwtConstants.TOKEN_HEADER);
+        System.out.println("DEBUG JWT: Processing request for " + request.getRequestURI() + " with authHeader: " + (authHeader != null ? "PRESENT" : "NULL"));
 
         if (authHeader == null || !authHeader.startsWith(JwtConstants.TOKEN_PREFIX)) {
+            System.out.println("DEBUG JWT: authHeader is null or invalid. Prefix check: " + (authHeader != null ? authHeader.startsWith(JwtConstants.TOKEN_PREFIX) : "N/A"));
             filterChain.doFilter(request, response);
             return;
         }

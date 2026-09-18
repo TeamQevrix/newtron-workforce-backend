@@ -5,11 +5,15 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
+import org.springframework.beans.factory.annotation.Value;
+import jakarta.annotation.PostConstruct;
 
 @Service
 public class LocalStorageService implements StorageService {
@@ -17,31 +21,27 @@ public class LocalStorageService implements StorageService {
     private static final long MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
     private static final List<String> ALLOWED_MIME_TYPES = Arrays.asList("image/jpeg", "image/png", "image/webp");
 
-    private static final Map<String, byte[]> FILE_CONTENTS = new ConcurrentHashMap<>();
-    private static final Map<String, String> FILE_CONTENT_TYPES = new ConcurrentHashMap<>();
+    @Value("${app.file-storage.base-path:./uploads}")
+    private String basePath;
+
+    @Value("${app.base-url:http://localhost:8080}")
+    private String baseUrl;
+
+    @PostConstruct
+    public void init() {
+        try {
+            Files.createDirectories(Paths.get(basePath, "profiles"));
+            Files.createDirectories(Paths.get(basePath, "documents"));
+            Files.createDirectories(Paths.get(basePath, "jobs"));
+        } catch (IOException e) {
+            throw new RuntimeException("Could not initialize storage directories", e);
+        }
+    }
 
     @Override
     public String uploadProfilePhoto(MultipartFile file) {
-        if (file == null || file.isEmpty()) {
-            throw new ValidationException("FILE_EMPTY", "File must not be empty");
-        }
-
-        if (file.getSize() > MAX_FILE_SIZE) {
-            throw new ValidationException("FILE_TOO_LARGE", "File size exceeds the limit of 5 MB");
-        }
-
-        String contentType = file.getContentType();
-        if (contentType == null || !ALLOWED_MIME_TYPES.contains(contentType.toLowerCase())) {
-            throw new ValidationException("INVALID_FILE_TYPE", "Only JPEG, PNG, and WEBP images are allowed");
-        }
-
-        // Simulate file upload and return a unique storage key
-        String originalFilename = file.getOriginalFilename();
-        String extension = "";
-        if (originalFilename != null && originalFilename.contains(".")) {
-            extension = originalFilename.substring(originalFilename.lastIndexOf("."));
-        }
-        return "profiles/" + UUID.randomUUID().toString() + extension;
+        validateFile(file, Arrays.asList("image/jpeg", "image/png", "image/webp"));
+        return saveFile(file, "profiles");
     }
 
     @Override
@@ -49,7 +49,6 @@ public class LocalStorageService implements StorageService {
         if (file == null || file.isEmpty()) {
             throw new ValidationException("FILE_EMPTY", "File must not be empty");
         }
-
         if (file.getSize() > MAX_FILE_SIZE) {
             throw new ValidationException("FILE_TOO_LARGE", "File size exceeds the limit of 5 MB");
         }
@@ -77,27 +76,58 @@ public class LocalStorageService implements StorageService {
             throw new ValidationException("INVALID_FILE_TYPE", "Only JPEG, PNG, WEBP, and PDF files are allowed");
         }
 
+        return saveFile(file, "documents");
+    }
+
+    private void validateFile(MultipartFile file, List<String> allowedMimeTypes) {
+        if (file == null || file.isEmpty()) {
+            throw new ValidationException("FILE_EMPTY", "File must not be empty");
+        }
+        if (file.getSize() > MAX_FILE_SIZE) {
+            throw new ValidationException("FILE_TOO_LARGE", "File size exceeds the limit of 5 MB");
+        }
+        String contentType = file.getContentType();
+        if (contentType == null || !allowedMimeTypes.contains(contentType.toLowerCase())) {
+            throw new ValidationException("INVALID_FILE_TYPE", "Invalid file type. Allowed: " + String.join(", ", allowedMimeTypes));
+        }
+    }
+
+    private String saveFile(MultipartFile file, String subDir) {
+        String originalFilename = file.getOriginalFilename();
         String extension = "";
         if (originalFilename != null && originalFilename.contains(".")) {
             extension = originalFilename.substring(originalFilename.lastIndexOf("."));
         }
-
-        String key = "documents/" + UUID.randomUUID().toString() + extension;
-        try {
-            FILE_CONTENTS.put(key, file.getBytes());
-            FILE_CONTENT_TYPES.put(key, contentType.toLowerCase());
-        } catch (IOException e) {
-            throw new ValidationException("FILE_READ_ERROR", "Failed to read file bytes: " + e.getMessage());
+        // Sanitize extension
+        extension = extension.replaceAll("[^a-zA-Z0-9.]", "");
+        
+        String filename = UUID.randomUUID().toString() + extension;
+        Path targetPath = Paths.get(basePath, subDir, filename).normalize();
+        
+        if (!targetPath.startsWith(Paths.get(basePath).normalize())) {
+            throw new ValidationException("PATH_TRAVERSAL", "Invalid path");
         }
-
-        return key;
+        
+        try {
+            Files.copy(file.getInputStream(), targetPath, StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException e) {
+            throw new ValidationException("FILE_WRITE_ERROR", "Failed to write file to disk");
+        }
+        
+        return subDir + "/" + filename;
     }
 
     @Override
     public void deletePhoto(String key) {
-        if (key != null) {
-            FILE_CONTENTS.remove(key);
-            FILE_CONTENT_TYPES.remove(key);
+        if (key != null && !key.contains("..")) {
+            try {
+                Path targetPath = Paths.get(basePath, key).normalize();
+                if (targetPath.startsWith(Paths.get(basePath).normalize())) {
+                    Files.deleteIfExists(targetPath);
+                }
+            } catch (IOException e) {
+                // Ignore or log
+            }
         }
     }
 
@@ -106,18 +136,40 @@ public class LocalStorageService implements StorageService {
         if (key == null) {
             return null;
         }
-        return "http://localhost:8080/files/" + key;
+        return baseUrl + "/files/" + key;
     }
 
     @Override
     public byte[] getDocumentContent(String key) {
-        if (key == null) return null;
-        return FILE_CONTENTS.get(key);
+        if (key == null || key.contains("..")) return null;
+        Path targetPath = Paths.get(basePath, key).normalize();
+        if (!targetPath.startsWith(Paths.get(basePath).normalize())) {
+            return null;
+        }
+        try {
+            return Files.readAllBytes(targetPath);
+        } catch (IOException e) {
+            return null;
+        }
     }
 
     @Override
     public String getDocumentContentType(String key) {
-        if (key == null) return null;
-        return FILE_CONTENT_TYPES.get(key);
+        if (key == null || key.contains("..")) return null;
+        Path targetPath = Paths.get(basePath, key).normalize();
+        try {
+            String type = Files.probeContentType(targetPath);
+            if (type == null) {
+                String lowerName = targetPath.toString().toLowerCase();
+                if (lowerName.endsWith(".pdf")) return "application/pdf";
+                if (lowerName.endsWith(".png")) return "image/png";
+                if (lowerName.endsWith(".webp")) return "image/webp";
+                if (lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg")) return "image/jpeg";
+                return "application/octet-stream";
+            }
+            return type;
+        } catch (IOException e) {
+            return "application/octet-stream";
+        }
     }
 }

@@ -12,6 +12,9 @@ public class IpRateLimiter {
     private final Map<String, IpRequestTracker> trackerMap = new ConcurrentHashMap<>();
 
     public boolean isAllowed(String ipAddress, int limit, long windowMillis) {
+        if ("127.0.0.1".equals(ipAddress) || "0:0:0:0:0:0:0:1".equals(ipAddress) || "localhost".equals(ipAddress)) {
+            return true;
+        }
         long now = System.currentTimeMillis();
         IpRequestTracker tracker = trackerMap.computeIfAbsent(ipAddress, k -> new IpRequestTracker(now));
         

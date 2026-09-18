@@ -16,6 +16,7 @@ import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -30,6 +31,7 @@ public class WorkerOnboardingController {
     private final OnboardingProgressService onboardingProgressService;
 
     @GetMapping("/status")
+    @Transactional(readOnly = true)
     public ApiResponse<OnboardingStatusResponse> getOnboardingStatus(
             @AuthenticationPrincipal UserDetails userDetails,
             HttpServletRequest httpServletRequest) {
@@ -44,7 +46,13 @@ public class WorkerOnboardingController {
         int progress = (int) onboardingProgressService.calculateCompletion(profile);
         String nextScreen = "ONBOARDING";
 
-        if (Boolean.TRUE.equals(profile.getIsCompleted()) || profile.getCurrentStep() == OnboardingStep.COMPLETED) {
+        if (profile.getCurrentStep() == OnboardingStep.VERIFICATION) {
+            onboardingProgressService.startProfilePreparation(profile);
+            status = "PROCESSING";
+            currentStep = profile.getPreparationStep();
+            progress = profile.getPreparationProgress();
+            nextScreen = "ONBOARDING";
+        } else if (Boolean.TRUE.equals(profile.getIsCompleted()) || profile.getCurrentStep() == OnboardingStep.COMPLETED) {
             status = "COMPLETED";
             currentStep = "COMPLETED";
             progress = 100;

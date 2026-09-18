@@ -6,3 +6,4 @@ public enum EmploymentStatus {
     SELF_EMPLOYED,
     FREELANCER
 }
+    

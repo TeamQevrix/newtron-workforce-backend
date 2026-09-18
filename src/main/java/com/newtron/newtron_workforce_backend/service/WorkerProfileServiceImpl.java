@@ -30,6 +30,9 @@ public class WorkerProfileServiceImpl implements WorkerProfileService {
     private final OnboardingProgressService onboardingProgressService;
     private final StorageService storageService;
     private final Clock clock;
+    private final com.newtron.newtron_workforce_backend.repository.WorkerMembershipRepository workerMembershipRepository;
+    private final com.newtron.newtron_workforce_backend.repository.ApplicationRepository applicationRepository;
+    private final com.newtron.newtron_workforce_backend.repository.WorkerReviewRepository workerReviewRepository;
 
     @Override
     @Transactional(readOnly = true)
@@ -125,6 +128,93 @@ public class WorkerProfileServiceImpl implements WorkerProfileService {
         WorkerBasicProfileResponse response = workerProfileMapper.toResponse(profile);
         response.setCompletionPercentage(onboardingProgressService.calculateCompletion(profile));
         response.setNextStep(onboardingProgressService.getNextStep(profile));
+
+        // Map User fields
+        if (profile.getUser() != null) {
+            response.setEmail(profile.getUser().getEmail());
+            response.setPhone(profile.getUser().getMobile());
+            response.setVerified(profile.getUser().getMobileVerified());
+        }
+
+        // Map Address Summary
+        if (profile.getAddress() != null) {
+            StringBuilder addressBuilder = new StringBuilder();
+            if (profile.getAddress().getCurrentAddress() != null) {
+                addressBuilder.append(profile.getAddress().getCurrentAddress());
+            }
+            if (profile.getAddress().getAreaVillage() != null) {
+                if (addressBuilder.length() > 0) addressBuilder.append(", ");
+                addressBuilder.append(profile.getAddress().getAreaVillage());
+            }
+            if (profile.getAddress().getPincode() != null) {
+                if (addressBuilder.length() > 0) addressBuilder.append(", ");
+                addressBuilder.append(profile.getAddress().getPincode());
+            }
+            response.setAddressSummary(addressBuilder.toString().isEmpty() ? null : addressBuilder.toString());
+        }
+
+        // Map Skills & Experience
+        String mainSkill = null;
+        String experienceYears = null;
+        if (profile.getSkills() != null) {
+            for (com.newtron.newtron_workforce_backend.entity.WorkerSkill ws : profile.getSkills()) {
+                if (Boolean.TRUE.equals(ws.getIsPrimary())) {
+                    if (ws.getSkill() != null) {
+                        mainSkill = ws.getSkill().getName();
+                    }
+                    if (ws.getExperienceYears() != null) {
+                        experienceYears = ws.getExperienceYears() + " Yr";
+                    }
+                    break;
+                }
+            }
+            if (mainSkill == null && !profile.getSkills().isEmpty()) {
+                com.newtron.newtron_workforce_backend.entity.WorkerSkill ws = profile.getSkills().iterator().next();
+                if (ws.getSkill() != null) {
+                    mainSkill = ws.getSkill().getName();
+                }
+                if (ws.getExperienceYears() != null) {
+                    experienceYears = ws.getExperienceYears() + " Yr";
+                }
+            }
+        }
+        response.setMainSkill(mainSkill);
+        response.setExperienceYears(experienceYears);
+
+        // Map Membership
+        if (profile.getUser() != null) {
+            java.util.Optional<com.newtron.newtron_workforce_backend.entity.WorkerMembership> membershipOpt =
+                    workerMembershipRepository.findByWorkerProfileId(profile.getId());
+            if (membershipOpt.isPresent()) {
+                com.newtron.newtron_workforce_backend.entity.WorkerMembership m = membershipOpt.get();
+                boolean isActive = "ACTIVE".equalsIgnoreCase(m.getStatus()) || "PAID".equalsIgnoreCase(m.getStatus());
+                if (isActive && (m.getExpiresAt() == null || m.getExpiresAt().isAfter(java.time.LocalDateTime.now()))) {
+                    response.setMembershipType(m.getPlan());
+                    if (m.getExpiresAt() != null) {
+                        response.setMembershipExpiry("Active until " + m.getExpiresAt().format(java.time.format.DateTimeFormatter.ofPattern("dd MMM yyyy")));
+                    } else {
+                        response.setMembershipExpiry("Active Plan");
+                    }
+                }
+            }
+        }
+
+        // Map Stats (Jobs Completed & Rating)
+        if (profile.getUser() != null) {
+            long completedJobs = applicationRepository.countByWorkerIdAndStatus(profile.getUser().getId(), "Completed");
+            response.setJobsCompleted(String.valueOf(completedJobs));
+
+            Double averageRating = workerReviewRepository.findAverageRatingByWorkerId(profile.getUser().getId());
+            if (averageRating != null) {
+                averageRating = java.math.BigDecimal.valueOf(averageRating)
+                        .setScale(1, java.math.RoundingMode.HALF_UP)
+                        .doubleValue();
+                response.setRating(String.valueOf(averageRating));
+            } else {
+                response.setRating(null); // Return null instead of mock 5.0
+            }
+        }
+
         return response;
     }
 }

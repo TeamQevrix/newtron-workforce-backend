@@ -10,4 +10,6 @@ public interface AuthService {
     void logout(LogoutRequest request);
     void logoutAll(User currentUser);
     CurrentUserResponse getMe(User currentUser);
+    UserResponse register(RegisterRequest request);
+    AuthResponse login(LoginRequest request);
 }
