@@ -19,4 +19,5 @@ public class RecruiterJobListResponse {
     private Long applicantsCount;
     private Long hiredCount;
     private java.math.BigDecimal monthlySalaryAmount;
+    private String engagementType;
 }

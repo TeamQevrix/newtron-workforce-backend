@@ -16,6 +16,8 @@ public class JobDetailDto {
     private String jobTitle;
     private String location;
     private Double dailyWage;
+    private String engagementType;
+    private java.math.BigDecimal monthlySalaryAmount;
     private String employmentType;
     private String distance;
     private String postedTime;

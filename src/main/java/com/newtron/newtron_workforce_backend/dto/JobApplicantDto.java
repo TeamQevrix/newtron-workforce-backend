@@ -19,4 +19,5 @@ public class JobApplicantDto {
     private String status;
     private String appliedDate;
     private Integer currentStep;
+    private String workPreference;
 }

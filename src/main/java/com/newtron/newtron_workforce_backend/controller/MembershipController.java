@@ -26,6 +26,8 @@ import org.springframework.http.*;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.client.RestTemplate;
 
@@ -290,8 +292,13 @@ public class MembershipController {
         user.setProfileCompleted(false);
         userRepository.save(user);
 
-        // Start background async profile preparation
-        onboardingProgressService.startProfilePreparation(profile);
+        // Start background async profile preparation only after the transaction commits to prevent optimistic locking race
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                onboardingProgressService.startProfilePreparation(profile);
+            }
+        });
 
         notificationHelper.sendNotification(
                 currentUser,

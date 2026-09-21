@@ -54,6 +54,10 @@ razorpay:
   key-id: ${RAZORPAY_KEY_ID:dummy}
   key-secret: ${RAZORPAY_KEY_SECRET:dummy}
 
+google:
+  places:
+    api-key: ${GOOGLE_PLACES_API_KEY:dummy}
+
 logging:
   level:
     org.springframework.security: DEBUG

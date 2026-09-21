@@ -10,4 +10,5 @@ public interface WorkerProfileService {
     WorkerBasicProfileResponse saveProfile(WorkerBasicProfileRequest request, User currentUser);
     WorkerBasicProfileResponse updateProfile(WorkerBasicProfileRequest request, User currentUser);
     WorkerBasicProfileResponse uploadProfilePhoto(MultipartFile file, User currentUser);
+    com.newtron.newtron_workforce_backend.dto.OnDemandAvailabilityResponse updateOnDemandAvailability(com.newtron.newtron_workforce_backend.dto.OnDemandAvailabilityRequest request, User currentUser);
 }

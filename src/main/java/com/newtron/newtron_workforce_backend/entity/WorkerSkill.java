@@ -29,4 +29,7 @@ public class WorkerSkill extends BaseEntity {
 
     @Column(name = "experience_months", nullable = false)
     private Integer experienceMonths;
+
+    @Column(name = "specialization")
+    private String specialization;
 }

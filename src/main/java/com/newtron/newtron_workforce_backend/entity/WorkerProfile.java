@@ -51,6 +51,10 @@ public class WorkerProfile extends BaseEntity {
     @Builder.Default
     private Boolean isCompleted = false;
 
+    @Column(name = "is_available_on_demand", nullable = false)
+    @Builder.Default
+    private Boolean isAvailableOnDemand = false;
+
     @Column(name = "preparation_progress", nullable = false)
     @Builder.Default
     private Integer preparationProgress = 0;

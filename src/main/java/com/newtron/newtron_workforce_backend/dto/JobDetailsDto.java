@@ -20,6 +20,8 @@ public class JobDetailsDto {
     private Double companyRating;
     private String jobTitle;
     private Double dailyWage;
+    private String engagementType;
+    private java.math.BigDecimal monthlySalaryAmount;
     private String employmentType;
     private String experienceRequired;
     private Integer openPositions;

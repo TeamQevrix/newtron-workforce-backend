@@ -37,7 +37,11 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.jdbc.core.JdbcTemplate;
+import com.newtron.newtron_workforce_backend.dto.RecruiterJobDetailResponse;
+import com.newtron.newtron_workforce_backend.dto.RecruiterJobUpdateRequest;
 
 import java.util.HashMap;
 import java.util.List;
@@ -77,6 +81,48 @@ public class RecruiterJobController {
         Company company = companyRepository.findByOwnerId(currentUser.getId())
                 .orElseThrow(() -> new ValidationException("COMPANY_REQUIRED", "Please complete your company profile onboarding first."));
 
+        String engagementType = request.getEngagementType();
+        if ("MONTHLY".equalsIgnoreCase(engagementType)) {
+            if (request.getMonthlySalaryAmount() == null) {
+                throw new ValidationException("VALIDATION_ERROR", "Monthly salary is required for MONTHLY engagement");
+            }
+            engagementType = "MONTHLY";
+        } else {
+            if (request.getSalary() == null || request.getSalary().trim().isEmpty()) {
+                throw new ValidationException("VALIDATION_ERROR", "Daily wage/salary is required");
+            }
+            engagementType = "DAILY";
+        }
+
+        String engagementDurationType = request.getEngagementDurationType();
+        Integer durationValue = request.getDurationValue();
+        String legacyDuration = request.getDuration();
+
+        if (engagementDurationType == null) {
+            if (legacyDuration == null || legacyDuration.trim().isEmpty()) {
+                throw new ValidationException("VALIDATION_ERROR", "Duration is required");
+            }
+            legacyDuration = legacyDuration.trim();
+        } else if ("PERMANENT".equalsIgnoreCase(engagementDurationType)) {
+            engagementDurationType = "PERMANENT";
+            durationValue = null;
+            legacyDuration = "Permanent";
+        } else if ("FIXED_TERM".equalsIgnoreCase(engagementDurationType)) {
+            engagementDurationType = "FIXED_TERM";
+            if (durationValue == null || durationValue <= 0) {
+                throw new ValidationException("VALIDATION_ERROR", "Valid duration value is required for FIXED_TERM engagement");
+            }
+            if ("DAILY".equals(engagementType)) {
+                legacyDuration = durationValue + " Days";
+            } else if ("MONTHLY".equals(engagementType)) {
+                legacyDuration = durationValue + " Months";
+            } else {
+                legacyDuration = durationValue + "";
+            }
+        } else {
+            throw new ValidationException("VALIDATION_ERROR", "Unsupported engagement duration type");
+        }
+
         Job job = Job.builder()
                 .title(request.getTitle().trim())
                 .companyName(company.getCompanyName())
@@ -84,8 +130,12 @@ public class RecruiterJobController {
                 .category(request.getCategory().trim())
                 .city(request.getCity().trim())
                 .workersRequired(request.getWorkersRequired())
-                .salary(request.getSalary().trim())
-                .duration(request.getDuration().trim())
+                .engagementType(engagementType)
+                .salary(request.getSalary() != null ? request.getSalary().trim() : null)
+                .monthlySalaryAmount(request.getMonthlySalaryAmount())
+                .engagementDurationType(engagementDurationType)
+                .durationValue(durationValue)
+                .duration(legacyDuration)
                 .description(request.getDescription().trim())
                 .experienceRequired(request.getExperienceRequired() != null ? request.getExperienceRequired().trim() : null)
                 .shiftHours(request.getShiftHours() != null ? request.getShiftHours().trim() : null)
@@ -160,6 +210,7 @@ public class RecruiterJobController {
                         .applicantsCount(applicantCountsMap.getOrDefault(job.getId(), 0L))
                         .hiredCount(hiredCountsMap.getOrDefault(job.getId(), 0L))
                         .monthlySalaryAmount(job.getMonthlySalaryAmount())
+                        .engagementType(job.getEngagementType())
                         .build())
                 .collect(Collectors.toList());
 
@@ -277,6 +328,7 @@ public class RecruiterJobController {
             String skillName = (skill != null && skill.getSkill() != null) ? skill.getSkill().getName() : "General";
             Integer expYears = skill != null ? skill.getExperienceYears() : 0;
             String cityName = (address != null && address.getCityId() != null) ? cityNamesMap.get(address.getCityId()) : "";
+            String pref = profile != null && profile.getProfessionalDetails() != null && profile.getProfessionalDetails().getPreferredWorkType() != null ? profile.getProfessionalDetails().getPreferredWorkType().name() : "BOTH";
 
             dtos.add(JobApplicantDto.builder()
                     .applicationId(app.getId())
@@ -291,10 +343,205 @@ public class RecruiterJobController {
                     .status(app.getStatus())
                     .appliedDate(app.getAppliedDate() != null ? app.getAppliedDate() : "")
                     .currentStep(app.getCurrentStep())
+                    .workPreference(pref)
                     .build());
         }
 
         return ApiResponseFactory.success(dtos, "Applicants retrieved successfully",
+                RequestContext.getRequestId(), httpServletRequest.getRequestURI(), startTime);
+    }
+
+    @GetMapping("/{id}")
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
+    public ApiResponse<RecruiterJobDetailResponse> getJobDetails(
+            @PathVariable("id") Long id,
+            @AuthenticationPrincipal UserDetails userDetails,
+            HttpServletRequest httpServletRequest) {
+        long startTime = getStartTime(httpServletRequest);
+        User currentUser = fetchCurrentUser(userDetails);
+
+        if (currentUser.getRole() != Role.RECRUITER) {
+            throw new ValidationException("UNAUTHORIZED_ACCESS", "Access denied. Only recruiters can view jobs.");
+        }
+
+        Company company = companyRepository.findByOwnerId(currentUser.getId())
+                .orElseThrow(() -> new ValidationException("COMPANY_REQUIRED", "Please complete your company profile onboarding first."));
+
+        Job job = jobRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("JOB_NOT_FOUND", "Job not found"));
+
+        if (job.getCompany() == null || !job.getCompany().getId().equals(company.getId())) {
+            throw new ResourceNotFoundException("JOB_NOT_FOUND", "Job not found");
+        }
+
+        RecruiterJobDetailResponse response = RecruiterJobDetailResponse.builder()
+                .id(job.getId())
+                .title(job.getTitle())
+                .companyName(job.getCompany() != null ? job.getCompany().getCompanyName() : job.getCompanyName())
+                .category(job.getCategory())
+                .city(job.getCity())
+                .workersRequired(job.getWorkersRequired())
+                .engagementType(job.getEngagementType())
+                .salary(job.getSalary())
+                .monthlySalaryAmount(job.getMonthlySalaryAmount())
+                .engagementDurationType(job.getEngagementDurationType())
+                .durationValue(job.getDurationValue())
+                .duration(job.getDuration())
+                .description(job.getDescription())
+                .experienceRequired(job.getExperienceRequired())
+                .shiftHours(job.getShiftHours())
+                .benefits(job.getBenefits())
+                .joiningDate(job.getJoiningDate())
+                .status(job.getStatus())
+                .build();
+
+        return ApiResponseFactory.success(response, "Job retrieved successfully",
+                RequestContext.getRequestId(), httpServletRequest.getRequestURI(), startTime);
+    }
+
+    @PutMapping("/{id}")
+    @Transactional
+    public ApiResponse<RecruiterJobResponse> updateJob(
+            @PathVariable("id") Long id,
+            @Valid @RequestBody RecruiterJobUpdateRequest request,
+            @AuthenticationPrincipal UserDetails userDetails,
+            HttpServletRequest httpServletRequest) {
+        long startTime = getStartTime(httpServletRequest);
+        User currentUser = fetchCurrentUser(userDetails);
+
+        if (currentUser.getRole() != Role.RECRUITER) {
+            throw new ValidationException("UNAUTHORIZED_ACCESS", "Access denied. Only recruiters can update jobs.");
+        }
+
+        Company company = companyRepository.findByOwnerId(currentUser.getId())
+                .orElseThrow(() -> new ValidationException("COMPANY_REQUIRED", "Please complete your company profile onboarding first."));
+
+        Job job = jobRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("JOB_NOT_FOUND", "Job not found"));
+
+        if (job.getCompany() == null || !job.getCompany().getId().equals(company.getId())) {
+            throw new ResourceNotFoundException("JOB_NOT_FOUND", "Job not found");
+        }
+
+        String engagementType = request.getEngagementType();
+        if ("MONTHLY".equalsIgnoreCase(engagementType)) {
+            if (request.getMonthlySalaryAmount() == null) {
+                throw new ValidationException("VALIDATION_ERROR", "Monthly salary is required for MONTHLY engagement");
+            }
+            engagementType = "MONTHLY";
+        } else {
+            if (request.getSalary() == null || request.getSalary().trim().isEmpty()) {
+                throw new ValidationException("VALIDATION_ERROR", "Daily wage/salary is required");
+            }
+            engagementType = "DAILY";
+        }
+
+        String engagementDurationType = request.getEngagementDurationType();
+        Integer durationValue = request.getDurationValue();
+        String legacyDuration = request.getDuration();
+
+        if (engagementDurationType == null) {
+            if (legacyDuration == null || legacyDuration.trim().isEmpty()) {
+                throw new ValidationException("VALIDATION_ERROR", "Duration is required");
+            }
+            legacyDuration = legacyDuration.trim();
+        } else if ("PERMANENT".equalsIgnoreCase(engagementDurationType)) {
+            engagementDurationType = "PERMANENT";
+            durationValue = null;
+            legacyDuration = "Permanent";
+        } else if ("FIXED_TERM".equalsIgnoreCase(engagementDurationType)) {
+            engagementDurationType = "FIXED_TERM";
+            if (durationValue == null || durationValue <= 0) {
+                throw new ValidationException("VALIDATION_ERROR", "Valid duration value is required for FIXED_TERM engagement");
+            }
+            if ("DAILY".equals(engagementType)) {
+                legacyDuration = durationValue + " Days";
+            } else if ("MONTHLY".equals(engagementType)) {
+                legacyDuration = durationValue + " Months";
+            } else {
+                legacyDuration = durationValue + "";
+            }
+        } else {
+            throw new ValidationException("VALIDATION_ERROR", "Unsupported engagement duration type");
+        }
+
+        job.setTitle(request.getTitle().trim());
+        job.setCategory(request.getCategory().trim());
+        job.setCity(request.getCity().trim());
+        job.setWorkersRequired(request.getWorkersRequired());
+        job.setEngagementType(engagementType);
+        job.setSalary(request.getSalary() != null ? request.getSalary().trim() : null);
+        job.setMonthlySalaryAmount(request.getMonthlySalaryAmount());
+        job.setEngagementDurationType(engagementDurationType);
+        job.setDurationValue(durationValue);
+        job.setDuration(legacyDuration);
+        job.setDescription(request.getDescription().trim());
+        job.setExperienceRequired(request.getExperienceRequired() != null ? request.getExperienceRequired().trim() : null);
+        job.setShiftHours(request.getShiftHours() != null ? request.getShiftHours().trim() : null);
+        job.setBenefits(request.getBenefits() != null ? request.getBenefits().trim() : null);
+        job.setJoiningDate(request.getJoiningDate() != null ? request.getJoiningDate().trim() : null);
+
+        Job savedJob = jobRepository.save(job);
+
+        RecruiterJobResponse response = RecruiterJobResponse.builder()
+                .id(savedJob.getId())
+                .companyName(savedJob.getCompany() != null ? savedJob.getCompany().getCompanyName() : savedJob.getCompanyName())
+                .title(savedJob.getTitle())
+                .category(savedJob.getCategory())
+                .city(savedJob.getCity())
+                .workersRequired(savedJob.getWorkersRequired())
+                .salary(savedJob.getSalary())
+                .duration(savedJob.getDuration())
+                .description(savedJob.getDescription())
+                .status(savedJob.getStatus())
+                .monthlySalaryAmount(savedJob.getMonthlySalaryAmount())
+                .build();
+
+        return ApiResponseFactory.success(response, "Job updated successfully",
+                RequestContext.getRequestId(), httpServletRequest.getRequestURI(), startTime);
+    }
+
+    @PatchMapping("/{id}/status")
+    @Transactional
+    public ApiResponse<RecruiterJobResponse> closeJob(
+            @PathVariable("id") Long id,
+            @AuthenticationPrincipal UserDetails userDetails,
+            HttpServletRequest httpServletRequest) {
+        long startTime = getStartTime(httpServletRequest);
+        User currentUser = fetchCurrentUser(userDetails);
+
+        if (currentUser.getRole() != Role.RECRUITER) {
+            throw new ValidationException("UNAUTHORIZED_ACCESS", "Access denied. Only recruiters can update jobs.");
+        }
+
+        Company company = companyRepository.findByOwnerId(currentUser.getId())
+                .orElseThrow(() -> new ValidationException("COMPANY_REQUIRED", "Please complete your company profile onboarding first."));
+
+        Job job = jobRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("JOB_NOT_FOUND", "Job not found"));
+
+        if (job.getCompany() == null || !job.getCompany().getId().equals(company.getId())) {
+            throw new ResourceNotFoundException("JOB_NOT_FOUND", "Job not found");
+        }
+
+        job.setStatus("Closed");
+        Job savedJob = jobRepository.save(job);
+
+        RecruiterJobResponse response = RecruiterJobResponse.builder()
+                .id(savedJob.getId())
+                .companyName(savedJob.getCompany() != null ? savedJob.getCompany().getCompanyName() : savedJob.getCompanyName())
+                .title(savedJob.getTitle())
+                .category(savedJob.getCategory())
+                .city(savedJob.getCity())
+                .workersRequired(savedJob.getWorkersRequired())
+                .salary(savedJob.getSalary())
+                .duration(savedJob.getDuration())
+                .description(savedJob.getDescription())
+                .status(savedJob.getStatus())
+                .monthlySalaryAmount(savedJob.getMonthlySalaryAmount())
+                .build();
+
+        return ApiResponseFactory.success(response, "Job closed successfully",
                 RequestContext.getRequestId(), httpServletRequest.getRequestURI(), startTime);
     }
 }

@@ -58,4 +58,6 @@ public class WorkerBasicProfileResponse {
     private String membershipExpiry;
 
     private Boolean verified;
+
+    private Boolean isAvailableOnDemand;
 }

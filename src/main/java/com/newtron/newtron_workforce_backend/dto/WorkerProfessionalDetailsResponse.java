@@ -20,6 +20,7 @@ public class WorkerProfessionalDetailsResponse {
     private EmploymentStatus currentEmploymentStatus;
     private SalaryType salaryType;
     private BigDecimal expectedSalary;
+    private BigDecimal expectedMonthlySalary;
     private PreferredWorkType preferredWorkType;
     private PreferredShift preferredShift;
     private Boolean immediateJoining;

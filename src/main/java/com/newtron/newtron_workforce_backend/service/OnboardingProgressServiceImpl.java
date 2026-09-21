@@ -58,9 +58,6 @@ public class OnboardingProgressServiceImpl implements OnboardingProgressService 
         if (profile.getAddress() == null) {
             return OnboardingStep.ADDRESS;
         }
-        if (profile.getDocuments() == null || profile.getDocuments().isEmpty()) {
-            return OnboardingStep.DOCUMENTS;
-        }
         if (profile.getMembership() == null || !"ACTIVE".equals(profile.getMembership().getStatus())) {
             return OnboardingStep.MEMBERSHIP;
         }

@@ -32,8 +32,11 @@ public class WorkerProfessionalDetails extends BaseEntity {
     @Column(name = "salary_type", nullable = false, length = 30)
     private SalaryType salaryType;
 
-    @Column(name = "expected_salary", nullable = false, precision = 10, scale = 2)
+    @Column(name = "expected_salary", precision = 10, scale = 2)
     private BigDecimal expectedSalary;
+
+    @Column(name = "expected_monthly_salary", precision = 12, scale = 2)
+    private BigDecimal expectedMonthlySalary;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "preferred_work_type", nullable = false, length = 30)

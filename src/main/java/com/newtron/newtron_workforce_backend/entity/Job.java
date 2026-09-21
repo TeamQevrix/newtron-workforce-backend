@@ -42,6 +42,15 @@ public class Job {
     @Column(name = "joining_date")
     private String joiningDate;
 
+    @Column(name = "engagement_type", length = 30)
+    private String engagementType;
+
+    @Column(name = "engagement_duration_type", length = 30)
+    private String engagementDurationType;
+
+    @Column(name = "duration_value")
+    private Integer durationValue;
+
     private String status; // "Active", "Paused", "Closed"
     private Integer workersRequired;
 

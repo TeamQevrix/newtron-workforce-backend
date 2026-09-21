@@ -25,10 +25,16 @@ public class RecruiterJobCreateRequest {
     @Min(value = 1, message = "Workers required must be at least 1")
     private Integer workersRequired;
 
-    @NotBlank(message = "Daily wage/salary is required")
+    private String engagementType;
+
     private String salary;
 
-    @NotBlank(message = "Duration is required")
+    private java.math.BigDecimal monthlySalaryAmount;
+
+    private String engagementDurationType;
+
+    private Integer durationValue;
+
     private String duration;
 
     @NotBlank(message = "Work description is required")

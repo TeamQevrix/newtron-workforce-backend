@@ -40,4 +40,7 @@ public class Application {
 
     @Column(name = "completed_at")
     private Instant completedAt;
+
+    @Column(name = "engagement_type")
+    private String engagementType;
 }

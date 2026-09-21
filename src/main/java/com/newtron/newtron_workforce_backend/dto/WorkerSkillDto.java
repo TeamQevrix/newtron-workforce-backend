@@ -28,4 +28,6 @@ public class WorkerSkillDto {
     @Min(value = 0, message = "Experience months cannot be negative")
     @Max(value = 11, message = "Experience months must be between 0 and 11")
     private Integer experienceMonths;
+
+    private String specialization;
 }

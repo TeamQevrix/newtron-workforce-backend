@@ -28,9 +28,11 @@ public class WorkerProfessionalDetailsRequest {
     @NotNull(message = "Salary type is required")
     private SalaryType salaryType;
 
-    @NotNull(message = "Expected salary is required")
     @DecimalMin(value = "0.01", message = "Expected salary must be greater than 0")
     private BigDecimal expectedSalary;
+
+    @DecimalMin(value = "0.01", message = "Expected monthly salary must be greater than 0")
+    private BigDecimal expectedMonthlySalary;
 
     @NotNull(message = "Preferred work type is required")
     private PreferredWorkType preferredWorkType;

@@ -59,6 +59,7 @@ public class WorkerProfessionalDetailsServiceImpl implements WorkerProfessionalD
                 .currentEmploymentStatus(request.getCurrentEmploymentStatus())
                 .salaryType(request.getSalaryType())
                 .expectedSalary(request.getExpectedSalary())
+                .expectedMonthlySalary(request.getExpectedMonthlySalary())
                 .preferredWorkType(request.getPreferredWorkType())
                 .preferredShift(request.getPreferredShift())
                 .immediateJoining(request.getImmediateJoining())
@@ -99,6 +100,7 @@ public class WorkerProfessionalDetailsServiceImpl implements WorkerProfessionalD
         details.setCurrentEmploymentStatus(request.getCurrentEmploymentStatus());
         details.setSalaryType(request.getSalaryType());
         details.setExpectedSalary(request.getExpectedSalary());
+        details.setExpectedMonthlySalary(request.getExpectedMonthlySalary());
         details.setPreferredWorkType(request.getPreferredWorkType());
         details.setPreferredShift(request.getPreferredShift());
         details.setImmediateJoining(request.getImmediateJoining());
@@ -163,6 +165,7 @@ public class WorkerProfessionalDetailsServiceImpl implements WorkerProfessionalD
                     .isPrimary(dto.getIsPrimary())
                     .experienceYears(dto.getExperienceYears())
                     .experienceMonths(dto.getExperienceMonths())
+                    .specialization(dto.getSpecialization())
                     .build();
 
             workerSkillRepository.save(workerSkill);

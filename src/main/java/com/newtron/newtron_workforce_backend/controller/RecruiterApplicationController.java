@@ -24,6 +24,11 @@ import com.newtron.newtron_workforce_backend.enums.CommissionStatus;
 import com.newtron.newtron_workforce_backend.repository.CompanyRepository;
 import com.newtron.newtron_workforce_backend.repository.JobRepository;
 import com.newtron.newtron_workforce_backend.repository.CommissionRepository;
+import com.newtron.newtron_workforce_backend.repository.WorkerProfileRepository;
+import com.newtron.newtron_workforce_backend.entity.WorkerProfile;
+import com.newtron.newtron_workforce_backend.entity.Agreement;
+import com.newtron.newtron_workforce_backend.enums.AgreementStatus;
+import com.newtron.newtron_workforce_backend.repository.AgreementRepository;
 import com.newtron.newtron_workforce_backend.auth.enums.Role;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -37,6 +42,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Map;
 import java.util.HashMap;
+import com.newtron.newtron_workforce_backend.dto.HireRequestDto;
 
 @RestController
 @RequestMapping("/api/v1/recruiter/applications")
@@ -51,11 +57,14 @@ public class RecruiterApplicationController {
     private final CompanyRepository companyRepository;
     private final JobRepository jobRepository;
     private final CommissionRepository commissionRepository;
+    private final WorkerProfileRepository workerProfileRepository;
+    private final AgreementRepository agreementRepository;
 
     @PatchMapping("/{id}/hire")
     @Transactional
     public ApiResponse<Map<String, Object>> hireApplication(
             @PathVariable("id") Long applicationId,
+            @RequestBody HireRequestDto hireRequest,
             @AuthenticationPrincipal UserDetails userDetails,
             HttpServletRequest httpServletRequest) {
         long startTime = getStartTime(httpServletRequest);
@@ -75,6 +84,24 @@ public class RecruiterApplicationController {
         if (application.getJob() == null || application.getJob().getCompany() == null ||
                 !application.getJob().getCompany().getId().equals(company.getId())) {
             throw new ResourceNotFoundException("APPLICATION_NOT_FOUND", "Application not found");
+        }
+
+        java.util.Optional<Agreement> existingAgreementOpt = agreementRepository.findByApplicationId(applicationId);
+        if (existingAgreementOpt.isPresent()) {
+            Agreement existingAgreement = existingAgreementOpt.get();
+            if (existingAgreement.getStatus() == AgreementStatus.DRAFT ||
+                existingAgreement.getStatus() == AgreementStatus.PENDING_WORKER_ACCEPTANCE ||
+                existingAgreement.getStatus() == AgreementStatus.ACTIVE) {
+                
+                Map<String, Object> result = new HashMap<>();
+                result.put("applicationId", applicationId);
+                result.put("agreementId", existingAgreement.getId());
+                result.put("status", existingAgreement.getStatus().name());
+                return ApiResponseFactory.success(result, "Worker hired successfully",
+                        RequestContext.getRequestId(), httpServletRequest.getRequestURI(), startTime);
+            } else {
+                throw new ValidationException("ALREADY_HIRED", "An agreement already exists for this application and cannot be rehired.");
+            }
         }
 
         // PESSIMISTIC LOCKING: Lock Job
@@ -98,45 +125,114 @@ public class RecruiterApplicationController {
             throw new ValidationException("JOB_CAPACITY_REACHED", "Job requirements capacity has already been filled.");
         }
 
-        // Validate monthly salary structure
-        BigDecimal salaryBase = job.getMonthlySalaryAmount();
-        if (salaryBase == null || salaryBase.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new ValidationException("INVALID_SALARY_STRUCTURE", "Salary structure is unavailable for commission calculation.");
+        // Validate worker preference against requested engagementType
+        String workerPref = "BOTH";
+        if (application.getWorker() != null) {
+            WorkerProfile profile = workerProfileRepository.findByUserId(application.getWorker().getId()).orElse(null);
+            if (profile != null && profile.getProfessionalDetails() != null && profile.getProfessionalDetails().getPreferredWorkType() != null) {
+                workerPref = profile.getProfessionalDetails().getPreferredWorkType().name();
+            }
+        }
+        
+        String requestedEngagement = "MONTHLY";
+        if (hireRequest != null && hireRequest.getEngagementType() != null) {
+            requestedEngagement = hireRequest.getEngagementType().toUpperCase();
+            if ("DAILY_WAGE".equals(requestedEngagement)) {
+                requestedEngagement = "DAILY";
+            }
         }
 
-        // Validate duplicate commission protection
-        if (commissionRepository.existsByApplicationId(applicationId)) {
-            throw new ValidationException("COMMISSION_ALREADY_EXISTS", "A commission record already exists for this application.");
+        String jobEngagement = job.getEngagementType() != null ? job.getEngagementType().toUpperCase() : "DAILY";
+        if ("DAILY_WAGE".equals(jobEngagement)) {
+            jobEngagement = "DAILY";
         }
+
+        if (!jobEngagement.equals(requestedEngagement)) {
+            throw new ValidationException("INVALID_ENGAGEMENT", "Requested engagement type (" + requestedEngagement + ") must match the Job's engagement type (" + jobEngagement + ").");
+        }
+
+        boolean isWorkerDaily = "DAILY".equals(workerPref) || "DAILY_WAGE".equals(workerPref);
+        boolean isRequestedDaily = "DAILY".equals(requestedEngagement) || "DAILY_WAGE".equals(requestedEngagement);
+
+        if (isWorkerDaily && !isRequestedDaily) {
+            throw new ValidationException("INVALID_ENGAGEMENT", "Worker is only available for DAILY engagement.");
+        }
+        if ("MONTHLY".equals(workerPref) && !"MONTHLY".equals(requestedEngagement)) {
+            throw new ValidationException("INVALID_ENGAGEMENT", "Worker is only available for MONTHLY engagement.");
+        }
+
+        BigDecimal dailyWage = null;
+        BigDecimal monthlySalary = null;
+        BigDecimal commissionRate = BigDecimal.ZERO;
+
+        if ("DAILY".equals(requestedEngagement) || "DAILY_WAGE".equals(requestedEngagement)) {
+            // DAILY
+            commissionRate = BigDecimal.ZERO;
+            String rawSalary = job.getSalary() != null ? job.getSalary() : "";
+            try {
+                String cleanSalary = rawSalary.replaceAll("[^0-9.]", "");
+                if (!cleanSalary.isEmpty()) {
+                    dailyWage = new BigDecimal(cleanSalary);
+                }
+            } catch (Exception e) {
+                // Ignore parsing errors, let dailyWage be null
+            }
+        } else {
+            // MONTHLY
+            monthlySalary = job.getMonthlySalaryAmount();
+            commissionRate = new BigDecimal("0.0500");
+        }
+
+        Instant now = Instant.now();
 
         // Complete hiring state transitions
-        Instant now = Instant.now();
-        application.setHiredAt(now);
-        application.setStatus("Hired");
+        application.setEngagementType(requestedEngagement);
         applicationRepository.save(application);
 
-        BigDecimal commissionRate = new BigDecimal("0.0500");
-        BigDecimal commissionAmount = salaryBase.multiply(commissionRate);
-
-        Commission commission = Commission.builder()
-                .company(company)
-                .job(job)
+        // Create Agreement
+        Agreement agreement = Agreement.builder()
                 .application(application)
+                .job(job)
+                .company(company)
                 .worker(application.getWorker())
-                .salaryBase(salaryBase)
+                .engagementType(requestedEngagement)
+                .engagementDurationType(job.getEngagementDurationType())
+                .durationValue(job.getDurationValue())
+                .duration(job.getDuration())
+                .dailyWage(dailyWage)
+                .monthlySalary(monthlySalary)
                 .commissionRate(commissionRate)
-                .commissionAmount(commissionAmount)
-                .status(CommissionStatus.PENDING)
-                .hiredAt(now)
+                .paymentResponsibility(null)
+                .paymentDueTerms(null)
+                .noticeDays(null)
+                .cancellationTerms(null)
+                .status(AgreementStatus.DRAFT)
+                .clientAcceptedAt(now)
+                // PHASE 4B SNAPSHOT
+                .workerNameSnapshot(application.getWorker() != null ? application.getWorker().getFullName() : null)
+                .companyNameSnapshot(company != null ? company.getCompanyName() : null)
+                .jobTitleSnapshot(job != null ? job.getTitle() : null)
+                .jobDescriptionSnapshot(job != null ? job.getDescription() : null)
+                .workLocationSnapshot(job != null ? job.getCity() : null)
+                .primarySkillSnapshot(job != null ? job.getCategory() : null)
+                .commissionPayer("CLIENT")
+                .commissionAmount(monthlySalary != null && commissionRate != null ? monthlySalary.multiply(commissionRate) : BigDecimal.ZERO)
+                .clientCustomTerms(null)
+                .agreementVersion(1)
+                .isLocked(false)
+                .standardTermsVersion(null)
+                .documentUrl(null)
+                .expiresAt(null)
                 .build();
-        commissionRepository.save(commission);
+        
+        agreement = agreementRepository.save(agreement);
 
         if (application.getWorker() != null) {
             String jobTitle = job.getTitle();
             notificationHelper.sendNotification(
                     application.getWorker(),
-                    "Hired!",
-                    "Congratulations, you have been hired for " + jobTitle + ".",
+                    "Job Offer Received!",
+                    "Congratulations, you have received a job offer for " + jobTitle + ".",
                     NotificationCategory.OFFERS,
                     NotificationPriority.HIGH,
                     "APPLICATION_DETAILS:" + application.getId()
@@ -145,12 +241,8 @@ public class RecruiterApplicationController {
 
         Map<String, Object> result = new HashMap<>();
         result.put("applicationId", applicationId);
-        result.put("status", "Hired");
-        result.put("hiredAt", now);
-        result.put("salaryBase", salaryBase);
-        result.put("commissionRate", commissionRate);
-        result.put("commissionAmount", commissionAmount);
-        result.put("commissionStatus", CommissionStatus.PENDING.name());
+        result.put("agreementId", agreement.getId());
+        result.put("status", AgreementStatus.DRAFT.name());
 
         return ApiResponseFactory.success(result, "Worker hired successfully",
                 RequestContext.getRequestId(), httpServletRequest.getRequestURI(), startTime);

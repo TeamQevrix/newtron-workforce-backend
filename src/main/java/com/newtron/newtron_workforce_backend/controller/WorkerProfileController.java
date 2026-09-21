@@ -80,6 +80,20 @@ public class WorkerProfileController {
                 RequestContext.getRequestId(), httpServletRequest.getRequestURI(), startTime);
     }
 
+    @PatchMapping("/on-demand-availability")
+    public ApiResponse<com.newtron.newtron_workforce_backend.dto.OnDemandAvailabilityResponse> updateOnDemandAvailability(
+            @Valid @RequestBody com.newtron.newtron_workforce_backend.dto.OnDemandAvailabilityRequest request,
+            @AuthenticationPrincipal UserDetails userDetails,
+            HttpServletRequest httpServletRequest) {
+        long startTime = getStartTime(httpServletRequest);
+        User currentUser = fetchCurrentUser(userDetails);
+        
+        com.newtron.newtron_workforce_backend.dto.OnDemandAvailabilityResponse response = workerProfileService.updateOnDemandAvailability(request, currentUser);
+        
+        return ApiResponseFactory.success(response, response.getMessage(),
+                RequestContext.getRequestId(), httpServletRequest.getRequestURI(), startTime);
+    }
+
     private User fetchCurrentUser(UserDetails userDetails) {
         if (userDetails == null) {
             throw new ResourceNotFoundException("NOT_AUTHENTICATED", "Not authenticated");

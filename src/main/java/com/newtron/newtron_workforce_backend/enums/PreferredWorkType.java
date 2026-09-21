@@ -4,5 +4,8 @@ public enum PreferredWorkType {
     FULL_TIME,
     PART_TIME,
     CONTRACT,
-    DAILY_WAGE
+    DAILY_WAGE,
+    DAILY,
+    MONTHLY,
+    BOTH
 }

@@ -33,6 +33,7 @@ public class WorkerProfileServiceImpl implements WorkerProfileService {
     private final com.newtron.newtron_workforce_backend.repository.WorkerMembershipRepository workerMembershipRepository;
     private final com.newtron.newtron_workforce_backend.repository.ApplicationRepository applicationRepository;
     private final com.newtron.newtron_workforce_backend.repository.WorkerReviewRepository workerReviewRepository;
+    private final com.newtron.newtron_workforce_backend.repository.TeamRepository teamRepository;
 
     @Override
     @Transactional(readOnly = true)
@@ -113,6 +114,36 @@ public class WorkerProfileServiceImpl implements WorkerProfileService {
                 .orElseThrow(() -> new ResourceNotFoundException("PROFILE_NOT_FOUND", "Worker profile not found for this user"));
     }
 
+    @Override
+    @Transactional
+    public com.newtron.newtron_workforce_backend.dto.OnDemandAvailabilityResponse updateOnDemandAvailability(
+            com.newtron.newtron_workforce_backend.dto.OnDemandAvailabilityRequest request, User currentUser) {
+        
+        WorkerProfile profile = getProfileEntity(currentUser);
+        
+        if (Boolean.TRUE.equals(request.getIsAvailableOnDemand())) {
+            if (!Boolean.TRUE.equals(currentUser.getMembershipActive())) {
+                throw new ValidationException("MEMBERSHIP_REQUIRED", "Active membership is required for On-Demand Work");
+            }
+            
+            if (teamRepository.existsByOwnerWorkerProfileId(profile.getId())) {
+                throw new ValidationException("INDIVIDUAL_ONLY", "On-Demand Work is only available for individual workers, not team owners");
+            }
+            
+            if (profile.getAddress() == null || profile.getAddress().getLatitude() == null || profile.getAddress().getLongitude() == null) {
+                throw new ValidationException("LOCATION_REQUIRED", "Location coordinates are required for On-Demand Work");
+            }
+        }
+        
+        profile.setIsAvailableOnDemand(request.getIsAvailableOnDemand());
+        WorkerProfile updatedProfile = workerProfileRepository.save(profile);
+        
+        return com.newtron.newtron_workforce_backend.dto.OnDemandAvailabilityResponse.builder()
+                .isAvailableOnDemand(updatedProfile.getIsAvailableOnDemand())
+                .message("On-Demand availability updated successfully")
+                .build();
+    }
+
     private void validateAge(LocalDate dob) {
         if (dob == null) {
             throw new ValidationException("INVALID_DATE_OF_BIRTH", "Date of birth is required");
@@ -128,6 +159,7 @@ public class WorkerProfileServiceImpl implements WorkerProfileService {
         WorkerBasicProfileResponse response = workerProfileMapper.toResponse(profile);
         response.setCompletionPercentage(onboardingProgressService.calculateCompletion(profile));
         response.setNextStep(onboardingProgressService.getNextStep(profile));
+        response.setIsAvailableOnDemand(profile.getIsAvailableOnDemand());
 
         // Map User fields
         if (profile.getUser() != null) {
