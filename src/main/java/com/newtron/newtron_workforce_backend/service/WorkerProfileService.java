@@ -11,4 +11,5 @@ public interface WorkerProfileService {
     WorkerBasicProfileResponse updateProfile(WorkerBasicProfileRequest request, User currentUser);
     WorkerBasicProfileResponse uploadProfilePhoto(MultipartFile file, User currentUser);
     com.newtron.newtron_workforce_backend.dto.OnDemandAvailabilityResponse updateOnDemandAvailability(com.newtron.newtron_workforce_backend.dto.OnDemandAvailabilityRequest request, User currentUser);
+    void changePassword(com.newtron.newtron_workforce_backend.dto.request.ChangePasswordRequest request, User currentUser);
 }

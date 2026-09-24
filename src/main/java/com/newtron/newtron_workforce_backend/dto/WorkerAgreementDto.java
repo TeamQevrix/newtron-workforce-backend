@@ -14,13 +14,28 @@ public class WorkerAgreementDto {
     private Long jobId;
     private Long companyId;
     private Long workerId;
+    
+    // Snapshots
+    private String workerNameSnapshot;
+    private String companyNameSnapshot;
+    private String jobTitleSnapshot;
+    private String jobDescriptionSnapshot;
+    private String workLocationSnapshot;
+    private String primarySkillSnapshot;
+    
+    // Engagement & Compensation
     private String engagementType;
     private BigDecimal dailyWage;
     private BigDecimal monthlySalary;
     private BigDecimal commissionRate;
+    private String commissionPayer;
+    private BigDecimal commissionAmount;
+    
+    // Duration
     private String engagementDurationType;
     private Integer durationValue;
     private String duration;
+    
     private String status;
     private Instant clientAcceptedAt;
     private Instant workerAcceptedAt;
@@ -30,4 +45,9 @@ public class WorkerAgreementDto {
     private String paymentDueTerms;
     private Integer noticeDays;
     private String cancellationTerms;
+    
+    // Terms & Versioning
+    private String clientCustomTerms;
+    private Integer agreementVersion;
+    private Boolean isLocked;
 }

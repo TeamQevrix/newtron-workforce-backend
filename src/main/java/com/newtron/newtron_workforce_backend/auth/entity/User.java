@@ -49,6 +49,13 @@ public class User {
     @Column(name = "password_hash", length = 255)
     private String passwordHash;
 
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    @Column(name = "password_reset_token_hash", length = 64)
+    private String passwordResetTokenHash;
+
+    @Column(name = "password_reset_expires_at")
+    private LocalDateTime passwordResetExpiresAt;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private Role role;

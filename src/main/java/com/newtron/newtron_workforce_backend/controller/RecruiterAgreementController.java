@@ -12,6 +12,10 @@ import com.newtron.newtron_workforce_backend.entity.Company;
 import com.newtron.newtron_workforce_backend.enums.AgreementStatus;
 import com.newtron.newtron_workforce_backend.repository.AgreementRepository;
 import com.newtron.newtron_workforce_backend.repository.CompanyRepository;
+import com.newtron.newtron_workforce_backend.repository.WorkerProfileRepository;
+import com.newtron.newtron_workforce_backend.service.NotificationHelper;
+import com.newtron.newtron_workforce_backend.enums.NotificationCategory;
+import com.newtron.newtron_workforce_backend.enums.NotificationPriority;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -30,6 +34,8 @@ public class RecruiterAgreementController {
     private final AgreementRepository agreementRepository;
     private final UserRepository userRepository;
     private final CompanyRepository companyRepository;
+    private final WorkerProfileRepository workerProfileRepository;
+    private final NotificationHelper notificationHelper;
 
     @GetMapping("/{agreementId}")
     public ApiResponse<Map<String, Object>> getAgreement(
@@ -126,6 +132,15 @@ public class RecruiterAgreementController {
         agreement.setIsLocked(true);
         agreement = agreementRepository.save(agreement);
 
+        notificationHelper.sendNotification(
+                agreement.getWorker(),
+                "New Job Agreement",
+                company.getCompanyName() + " has sent you a new job agreement.",
+                NotificationCategory.OFFERS,
+                NotificationPriority.HIGH,
+                "APPLICATION_DETAILS:" + agreement.getApplication().getId()
+        );
+
         Map<String, Object> response = new HashMap<>();
         response.put("agreementId", agreement.getId());
         response.put("status", agreement.getStatus().name());
@@ -155,6 +170,15 @@ public class RecruiterAgreementController {
     private Map<String, Object> mapAgreementResponse(Agreement agreement) {
         Map<String, Object> response = new HashMap<>();
         response.put("agreementId", agreement.getId());
+        
+        Long workerProfileId = null;
+        if (agreement.getWorker() != null) {
+            workerProfileId = workerProfileRepository.findByUserId(agreement.getWorker().getId())
+                    .map(com.newtron.newtron_workforce_backend.entity.WorkerProfile::getId)
+                    .orElse(null);
+        }
+        response.put("workerId", workerProfileId);
+        
         response.put("status", agreement.getStatus() != null ? agreement.getStatus().name() : null);
         response.put("agreementVersion", agreement.getAgreementVersion());
         response.put("isLocked", agreement.getIsLocked());

@@ -15,6 +15,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import com.newtron.newtron_workforce_backend.auth.repository.UserRepository;
+import com.newtron.newtron_workforce_backend.common.exception.UnauthorizedException;
+import com.newtron.newtron_workforce_backend.dto.request.ChangePasswordRequest;
 
 import java.time.Clock;
 import java.time.LocalDate;
@@ -34,6 +38,8 @@ public class WorkerProfileServiceImpl implements WorkerProfileService {
     private final com.newtron.newtron_workforce_backend.repository.ApplicationRepository applicationRepository;
     private final com.newtron.newtron_workforce_backend.repository.WorkerReviewRepository workerReviewRepository;
     private final com.newtron.newtron_workforce_backend.repository.TeamRepository teamRepository;
+    private final PasswordEncoder passwordEncoder;
+    private final UserRepository userRepository;
 
     @Override
     @Transactional(readOnly = true)
@@ -142,6 +148,28 @@ public class WorkerProfileServiceImpl implements WorkerProfileService {
                 .isAvailableOnDemand(updatedProfile.getIsAvailableOnDemand())
                 .message("On-Demand availability updated successfully")
                 .build();
+    }
+
+    @Override
+    @Transactional
+    public void changePassword(ChangePasswordRequest request, User currentUser) {
+        if (request.getCurrentPassword() == null || request.getNewPassword() == null) {
+            throw new ValidationException("INVALID_INPUT", "Passwords cannot be empty");
+        }
+
+        if (request.getCurrentPassword().equals(request.getNewPassword())) {
+            throw new ValidationException("SAME_PASSWORD", "New password cannot be the same as current password");
+        }
+
+        if (!passwordEncoder.matches(request.getCurrentPassword(), currentUser.getPasswordHash())) {
+            throw new UnauthorizedException("INVALID_CREDENTIALS", "Incorrect current password");
+        }
+
+        String encodedPassword = passwordEncoder.encode(request.getNewPassword());
+        currentUser.setPasswordHash(encodedPassword);
+        userRepository.save(currentUser);
+
+        log.info("Audit Trail: PASSWORD_CHANGED - Password changed successfully for user: {}", currentUser.getId());
     }
 
     private void validateAge(LocalDate dob) {

@@ -72,6 +72,18 @@ public class AuthController {
                 RequestContext.getRequestId(), httpServletRequest.getRequestURI(), startTime);
     }
 
+    @PostMapping("/reset-password")
+    public ApiResponse<Void> resetPassword(
+            @Valid @RequestBody ResetPasswordRequest request,
+            HttpServletRequest httpServletRequest) {
+        long startTime = getStartTime(httpServletRequest);
+        
+        authService.resetPassword(request);
+        
+        return ApiResponseFactory.success(null, "Password reset successfully", 
+                RequestContext.getRequestId(), httpServletRequest.getRequestURI(), startTime);
+    }
+
     @PostMapping("/refresh-token")
     public ApiResponse<AuthResponse> refreshToken(
             @Valid @RequestBody RefreshTokenRequest request,

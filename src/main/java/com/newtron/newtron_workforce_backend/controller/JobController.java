@@ -66,15 +66,54 @@ public class JobController {
         }
         
         List<com.newtron.newtron_workforce_backend.entity.Job> jobsList = new ArrayList<>(jobs);
-        
-        // Sort newest first by database ID
-        jobsList.sort((a, b) -> b.getId().compareTo(a.getId()));
 
         List<Long> hiddenJobIds = new ArrayList<>();
+        String workerCity = null;
         if (userDetails != null) {
             User currentUser = userRepository.findByMobile(userDetails.getUsername()).orElse(null);
             if (currentUser != null) {
                 hiddenJobIds = notInterestedJobRepository.findHiddenJobIdsByWorkerId(currentUser.getId());
+                WorkerProfile profile = workerProfileRepository.findByUserId(currentUser.getId()).orElse(null);
+                if (profile != null) {
+                    WorkerAddress address = workerAddressRepository.findByWorkerProfileId(profile.getId()).orElse(null);
+                    if (address != null && address.getCityId() != null) {
+                        try {
+                            workerCity = jdbcTemplate.queryForObject(
+                                    "SELECT name FROM master_cities WHERE id = ?",
+                                    String.class,
+                                    address.getCityId()
+                            );
+                        } catch (Exception e) {
+                            workerCity = null;
+                        }
+                    }
+                }
+            }
+        }
+
+        final String finalWorkerCity = workerCity;
+        // Sort by city priority, then newest first
+        jobsList.sort((a, b) -> {
+            if (finalWorkerCity != null) {
+                boolean aMatch = a.getCity() != null && a.getCity().trim().equalsIgnoreCase(finalWorkerCity.trim());
+                boolean bMatch = b.getCity() != null && b.getCity().trim().equalsIgnoreCase(finalWorkerCity.trim());
+                if (aMatch && !bMatch) return -1;
+                if (!aMatch && bMatch) return 1;
+            }
+            return b.getId().compareTo(a.getId());
+        });
+
+        java.util.Map<Long, Long> filledCountsMap;
+        if (jobsList.isEmpty()) {
+            filledCountsMap = java.util.Collections.emptyMap();
+        } else {
+            filledCountsMap = new java.util.HashMap<>();
+            List<Long> jobIds = jobsList.stream().map(com.newtron.newtron_workforce_backend.entity.Job::getId).collect(java.util.stream.Collectors.toList());
+            List<Object[]> filledResults = applicationRepository.countFilledByJobIds(jobIds);
+            for (Object[] row : filledResults) {
+                if (row[0] != null && row[1] != null) {
+                    filledCountsMap.put(((Number) row[0]).longValue(), ((Number) row[1]).longValue());
+                }
             }
         }
 
@@ -90,8 +129,7 @@ public class JobController {
 
             // Filter out fully filled jobs (Hired + Completed counts)
             int required = job.getWorkersRequired() != null ? job.getWorkersRequired() : 1;
-            long filledCount = applicationRepository.countByJobIdAndStatus(job.getId(), "Hired") +
-                               applicationRepository.countByJobIdAndStatus(job.getId(), "Completed");
+            long filledCount = filledCountsMap.getOrDefault(job.getId(), 0L);
             if (filledCount >= required) {
                 continue;
             }

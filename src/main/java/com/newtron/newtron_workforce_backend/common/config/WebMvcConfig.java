@@ -9,13 +9,22 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 public class WebMvcConfig implements WebMvcConfigurer {
 
     private final LoggingInterceptor loggingInterceptor;
+    private final com.newtron.newtron_workforce_backend.interceptor.WorkerMembershipInterceptor workerMembershipInterceptor;
 
-    public WebMvcConfig(LoggingInterceptor loggingInterceptor) {
+    public WebMvcConfig(LoggingInterceptor loggingInterceptor, com.newtron.newtron_workforce_backend.interceptor.WorkerMembershipInterceptor workerMembershipInterceptor) {
         this.loggingInterceptor = loggingInterceptor;
+        this.workerMembershipInterceptor = workerMembershipInterceptor;
     }
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(loggingInterceptor).addPathPatterns("/**");
+        
+        registry.addInterceptor(workerMembershipInterceptor)
+                .addPathPatterns("/api/v1/worker/**")
+                .excludePathPatterns(
+                        "/api/v1/worker/membership/**",
+                        "/api/v1/worker/profile/change-password"
+                );
     }
 }

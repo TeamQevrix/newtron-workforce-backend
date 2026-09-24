@@ -59,6 +59,9 @@ public class RecruiterApplicationController {
     private final CommissionRepository commissionRepository;
     private final WorkerProfileRepository workerProfileRepository;
     private final AgreementRepository agreementRepository;
+    private final com.newtron.newtron_workforce_backend.repository.WorkerSkillRepository workerSkillRepository;
+    private final com.newtron.newtron_workforce_backend.repository.WorkerAddressRepository workerAddressRepository;
+    private final org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
 
     @PatchMapping("/{id}/hire")
     @Transactional
@@ -397,6 +400,113 @@ public class RecruiterApplicationController {
         }
         return userRepository.findByMobile(userDetails.getUsername())
                 .orElseThrow(() -> new ResourceNotFoundException("USER_NOT_FOUND", "User not found"));
+    }
+
+    @GetMapping("/{id}")
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
+    public ApiResponse<Map<String, Object>> getApplicationDetails(
+            @PathVariable("id") Long applicationId,
+            @AuthenticationPrincipal UserDetails userDetails,
+            HttpServletRequest httpServletRequest) {
+        long startTime = getStartTime(httpServletRequest);
+        User currentUser = fetchCurrentUser(userDetails);
+
+        if (currentUser.getRole() != Role.RECRUITER) {
+            throw new ValidationException("UNAUTHORIZED_ACCESS", "Access denied.");
+        }
+
+        Company company = companyRepository.findByOwnerId(currentUser.getId())
+                .orElseThrow(() -> new ValidationException("COMPANY_REQUIRED", "Company profile required."));
+
+        Application application = applicationRepository.findById(applicationId)
+                .orElseThrow(() -> new ResourceNotFoundException("APPLICATION_NOT_FOUND", "Application not found"));
+
+        if (application.getJob() == null || application.getJob().getCompany() == null ||
+                !application.getJob().getCompany().getId().equals(company.getId())) {
+            throw new ResourceNotFoundException("APPLICATION_NOT_FOUND", "Application not found");
+        }
+
+        Job job = application.getJob();
+
+        com.newtron.newtron_workforce_backend.dto.RecruiterJobDetailResponse jobDto = com.newtron.newtron_workforce_backend.dto.RecruiterJobDetailResponse.builder()
+                .id(job.getId())
+                .title(job.getTitle())
+                .companyName(job.getCompany() != null ? job.getCompany().getCompanyName() : job.getCompanyName())
+                .category(job.getCategory())
+                .city(job.getCity())
+                .workersRequired(job.getWorkersRequired())
+                .engagementType(job.getEngagementType())
+                .salary(job.getSalary())
+                .monthlySalaryAmount(job.getMonthlySalaryAmount())
+                .engagementDurationType(job.getEngagementDurationType())
+                .durationValue(job.getDurationValue())
+                .duration(job.getDuration())
+                .description(job.getDescription())
+                .experienceRequired(job.getExperienceRequired())
+                .shiftHours(job.getShiftHours())
+                .benefits(job.getBenefits())
+                .joiningDate(job.getJoiningDate())
+                .status(job.getStatus())
+                .build();
+
+        com.newtron.newtron_workforce_backend.dto.JobApplicantDto applicantDto = null;
+        if (application.getWorker() != null) {
+            Long workerId = application.getWorker().getId();
+            
+            com.newtron.newtron_workforce_backend.entity.WorkerProfile profile = workerProfileRepository.findByUserId(workerId).orElse(null);
+            
+            java.util.List<com.newtron.newtron_workforce_backend.entity.WorkerSkill> skills = workerSkillRepository.findPrimarySkillsByWorkerIds(java.util.Collections.singletonList(workerId));
+            com.newtron.newtron_workforce_backend.entity.WorkerSkill skill = skills.isEmpty() ? null : skills.get(0);
+            
+            java.util.List<Object[]> ratingRows = workerReviewRepository.findAverageRatingsByWorkerIds(java.util.Collections.singletonList(workerId));
+            Double rating = ratingRows.isEmpty() ? 0.0 : ((Number) ratingRows.get(0)[1]).doubleValue();
+            
+            java.util.List<Object[]> completedRows = applicationRepository.countCompletedJobsByWorkerIds(java.util.Collections.singletonList(workerId));
+            Integer completedJobs = completedRows.isEmpty() ? 0 : ((Number) completedRows.get(0)[1]).intValue();
+            
+            String cityName = "";
+            if (profile != null) {
+                java.util.List<com.newtron.newtron_workforce_backend.entity.WorkerAddress> addresses = workerAddressRepository.findByWorkerProfileIdIn(java.util.Collections.singletonList(profile.getId()));
+                if (!addresses.isEmpty() && addresses.get(0).getCityId() != null) {
+                    try {
+                        cityName = jdbcTemplate.queryForObject(
+                            "SELECT name FROM master_cities WHERE id = ?",
+                            new Object[]{addresses.get(0).getCityId()},
+                            String.class
+                        );
+                    } catch (Exception e) {}
+                }
+            }
+            
+            String workerName = profile != null ? profile.getFullName() : (application.getWorker().getFullName() != null ? application.getWorker().getFullName() : "Newtron Candidate");
+            String photo = profile != null ? profile.getPhotoStorageKey() : null;
+            String skillName = (skill != null && skill.getSkill() != null) ? skill.getSkill().getName() : "General";
+            Integer expYears = skill != null ? skill.getExperienceYears() : 0;
+            String pref = profile != null && profile.getProfessionalDetails() != null && profile.getProfessionalDetails().getPreferredWorkType() != null ? profile.getProfessionalDetails().getPreferredWorkType().name() : "BOTH";
+
+            applicantDto = com.newtron.newtron_workforce_backend.dto.JobApplicantDto.builder()
+                    .applicationId(application.getId())
+                    .workerId(workerId)
+                    .workerName(workerName)
+                    .profilePhoto(photo)
+                    .skill(skillName)
+                    .experienceYears(expYears)
+                    .city(cityName != null ? cityName : "")
+                    .rating(rating)
+                    .jobsCompleted(completedJobs)
+                    .status(application.getStatus())
+                    .appliedDate(application.getAppliedDate() != null ? application.getAppliedDate() : "")
+                    .currentStep(application.getCurrentStep())
+                    .workPreference(pref)
+                    .build();
+        }
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("applicant", applicantDto);
+        result.put("job", jobDto);
+
+        return ApiResponseFactory.success(result, "Application details retrieved successfully",
+                RequestContext.getRequestId(), httpServletRequest.getRequestURI(), startTime);
     }
 
     private long getStartTime(HttpServletRequest request) {

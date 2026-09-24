@@ -16,6 +16,15 @@ public interface JobRepository extends JpaRepository<Job, Long> {
     @Query("SELECT COUNT(j) FROM Job j WHERE j.status = 'Active'")
     long countActiveJobs();
 
+    @Query("SELECT COUNT(j) FROM Job j WHERE j.status = 'Active' " +
+           "AND j.id NOT IN :hiddenJobIds " +
+           "AND COALESCE(j.workersRequired, 1) > (SELECT COUNT(a) FROM Application a WHERE a.job = j AND a.status IN ('Hired', 'Completed'))")
+    long countAvailableJobsExcludingHidden(@org.springframework.data.repository.query.Param("hiddenJobIds") java.util.List<Long> hiddenJobIds);
+
+    @Query("SELECT COUNT(j) FROM Job j WHERE j.status = 'Active' " +
+           "AND COALESCE(j.workersRequired, 1) > (SELECT COUNT(a) FROM Application a WHERE a.job = j AND a.status IN ('Hired', 'Completed'))")
+    long countAvailableJobs();
+
     @Query("SELECT j FROM Job j LEFT JOIN FETCH j.recruiter WHERE j.status = 'Active' AND (" +
            "LOWER(j.category) = LOWER(:skill1) OR LOWER(j.category) = LOWER(:skill2) OR " +
            "LOWER(j.title) LIKE LOWER(CONCAT('%', :skill1, '%')) OR LOWER(j.title) LIKE LOWER(CONCAT('%', :skill2, '%'))) " +

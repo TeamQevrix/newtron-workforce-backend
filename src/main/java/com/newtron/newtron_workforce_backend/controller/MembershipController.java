@@ -10,7 +10,9 @@ import com.newtron.newtron_workforce_backend.common.response.ApiResponseFactory;
 import com.newtron.newtron_workforce_backend.dto.RazorpayOrderResponse;
 import com.newtron.newtron_workforce_backend.dto.PaymentVerificationRequest;
 import com.newtron.newtron_workforce_backend.dto.WorkerMembershipResponse;
+import com.newtron.newtron_workforce_backend.dto.WorkerPaymentHistoryResponse;
 import com.newtron.newtron_workforce_backend.entity.WorkerMembership;
+import com.newtron.newtron_workforce_backend.entity.WorkerPaymentHistory;
 import com.newtron.newtron_workforce_backend.entity.WorkerProfile;
 import com.newtron.newtron_workforce_backend.enums.OnboardingStep;
 import com.newtron.newtron_workforce_backend.repository.WorkerMembershipRepository;
@@ -35,8 +37,10 @@ import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.time.LocalDateTime;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/v1/worker/membership")
@@ -49,6 +53,7 @@ public class MembershipController {
     private final com.newtron.newtron_workforce_backend.repository.TeamRepository teamRepository;
     private final OnboardingProgressService onboardingProgressService;
     private final NotificationHelper notificationHelper;
+    private final com.newtron.newtron_workforce_backend.service.WorkerPaymentHistoryService workerPaymentHistoryService;
 
     @Value("${razorpay.key-id}")
     private String razorpayKeyId;
@@ -218,8 +223,15 @@ public class MembershipController {
             membership.setStatus("ACTIVE");
             membership.setPaymentPaymentId(request.getRazorpayPaymentId() != null ? request.getRazorpayPaymentId() : "pay_mock_" + System.currentTimeMillis());
             membership.setPaymentSignature(request.getRazorpaySignature() != null ? request.getRazorpaySignature() : "sig_mock_" + System.currentTimeMillis());
-            membership.setActivatedAt(java.time.LocalDateTime.now());
+            LocalDateTime now = java.time.LocalDateTime.now();
+            if (membership.getActivatedAt() == null) {
+                membership.setActivatedAt(now);
+            }
+            membership.setExpiresAt(now.plusMonths(1));
             workerMembershipRepository.save(membership);
+
+            String mockPaymentId = membership.getPaymentPaymentId();
+            workerPaymentHistoryService.recordPaymentSuccess(membership, mockPaymentId, request.getRazorpayOrderId(), membership.getAmount(), membership.getCurrency(), null);
 
             notificationHelper.sendNotification(
                     currentUser,
@@ -247,6 +259,8 @@ public class MembershipController {
         headers.setBasicAuth(razorpayKeyId, razorpayKeySecret);
         HttpEntity<Void> entity = new HttpEntity<>(headers);
 
+        String paymentMethod = null;
+
         try {
             ResponseEntity<Map> response = restTemplate.exchange(paymentUrl, HttpMethod.GET, entity, Map.class);
             if (response.getStatusCode() == HttpStatus.OK) {
@@ -256,6 +270,8 @@ public class MembershipController {
                 Object rAmountObj = body.get("amount");
                 Long rAmount = rAmountObj instanceof Number ? ((Number) rAmountObj).longValue() : Long.parseLong(rAmountObj.toString());
                 String rCurrency = (String) body.get("currency");
+                String rMethod = (String) body.get("method");
+                paymentMethod = rMethod;
 
                 if (!request.getRazorpayOrderId().equals(rOrderId) ||
                         !membership.getAmount().equals(rAmount) ||
@@ -277,8 +293,14 @@ public class MembershipController {
         membership.setStatus("ACTIVE");
         membership.setPaymentPaymentId(request.getRazorpayPaymentId());
         membership.setPaymentSignature(request.getRazorpaySignature());
-        membership.setActivatedAt(LocalDateTime.now());
+        LocalDateTime now = LocalDateTime.now();
+        if (membership.getActivatedAt() == null) {
+            membership.setActivatedAt(now);
+        }
+        membership.setExpiresAt(now.plusMonths(1));
         workerMembershipRepository.save(membership);
+        
+        workerPaymentHistoryService.recordPaymentSuccess(membership, request.getRazorpayPaymentId(), request.getRazorpayOrderId(), membership.getAmount(), membership.getCurrency(), paymentMethod);
 
         profile.setCurrentStep(OnboardingStep.VERIFICATION);
         profile.setIsCompleted(false);
@@ -321,6 +343,201 @@ public class MembershipController {
                 RequestContext.getRequestId(), httpServletRequest.getRequestURI(), startTime);
     }
 
+    @PostMapping("/renew/order")
+    @Transactional
+    public ApiResponse<RazorpayOrderResponse> createRenewalOrder(
+            @AuthenticationPrincipal UserDetails userDetails,
+            HttpServletRequest httpServletRequest) {
+        long startTime = getStartTime(httpServletRequest);
+        User currentUser = fetchCurrentUser(userDetails);
+        WorkerProfile profile = workerProfileRepository.findByUserId(currentUser.getId())
+                .orElseThrow(() -> new ValidationException("WORKER_PROFILE_NOT_FOUND", "Worker profile not found"));
+
+        WorkerMembership membership = workerMembershipRepository.findByWorkerProfileId(profile.getId())
+                .orElseThrow(() -> new ResourceNotFoundException("MEMBERSHIP_NOT_FOUND", "No existing membership found to renew"));
+
+        if (membership.getExpiresAt() == null) {
+            throw new ValidationException("RENEWAL_NOT_SUPPORTED", "Existing membership does not support renewal (no expiry date found)");
+        }
+
+        Long targetAmountPaise = "TEAM_MONTHLY".equalsIgnoreCase(membership.getPlan()) ? 49900L : AMOUNT_INDIVIDUAL_PAISE;
+
+        String orderId;
+        boolean isDummy = razorpayKeyId == null || razorpayKeyId.isEmpty() || razorpayKeyId.equals("dummy") || razorpayKeyId.contains("dummy");
+
+        if (isDummy) {
+            orderId = "order_mock_renew_" + System.currentTimeMillis();
+        } else {
+            String razorpayUrl = "https://api.razorpay.com/v1/orders";
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.setBasicAuth(razorpayKeyId, razorpayKeySecret);
+
+            Map<String, Object> orderRequest = new HashMap<>();
+            orderRequest.put("amount", targetAmountPaise);
+            orderRequest.put("currency", CURRENCY_INR);
+            orderRequest.put("receipt", "receipt_renew_" + profile.getId() + "_" + System.currentTimeMillis());
+
+            HttpEntity<Map<String, Object>> requestEntity = new HttpEntity<>(orderRequest, headers);
+            try {
+                ResponseEntity<Map> response = restTemplate.postForEntity(razorpayUrl, requestEntity, Map.class);
+                if (response.getStatusCode() == HttpStatus.CREATED || response.getStatusCode() == HttpStatus.OK) {
+                    Map body = response.getBody();
+                    orderId = (String) body.get("id");
+                } else {
+                    throw new ValidationException("RAZORPAY_ERROR", "Failed to create renewal order on Razorpay");
+                }
+            } catch (Exception e) {
+                throw new ValidationException("RAZORPAY_ERROR", "Error communicating with Razorpay: " + e.getMessage());
+            }
+        }
+
+        membership.setPaymentProvider(PROVIDER_RAZORPAY);
+        membership.setPaymentOrderId(orderId);
+        workerMembershipRepository.save(membership);
+
+        RazorpayOrderResponse orderResponse = RazorpayOrderResponse.builder()
+                .orderId(orderId)
+                .amount(targetAmountPaise)
+                .currency(CURRENCY_INR)
+                .keyId(isDummy ? "rzp_test_dummykey" : razorpayKeyId)
+                .build();
+
+        return ApiResponseFactory.success(orderResponse, "Razorpay renewal order created successfully",
+                RequestContext.getRequestId(), httpServletRequest.getRequestURI(), startTime);
+    }
+
+    @PostMapping("/renew/verify")
+    @Transactional
+    public ApiResponse<WorkerMembershipResponse> verifyRenewalPayment(
+            @RequestBody PaymentVerificationRequest request,
+            @AuthenticationPrincipal UserDetails userDetails,
+            HttpServletRequest httpServletRequest) {
+        long startTime = getStartTime(httpServletRequest);
+        User currentUser = fetchCurrentUser(userDetails);
+        WorkerProfile profile = fetchWorkerProfile(currentUser);
+
+        WorkerMembership membership = workerMembershipRepository.findByPaymentOrderId(request.getRazorpayOrderId())
+                .orElseThrow(() -> new ResourceNotFoundException("MEMBERSHIP_NOT_FOUND", "No membership order found for the provided order ID"));
+
+        if (!membership.getWorkerProfile().getId().equals(profile.getId())) {
+            throw new ValidationException("UNAUTHORIZED_ACCESS", "Membership order does not belong to the current authenticated worker");
+        }
+
+        if (membership.getExpiresAt() == null) {
+            throw new ValidationException("RENEWAL_NOT_SUPPORTED", "Membership missing expiry date");
+        }
+
+        if (request.getRazorpayPaymentId() != null && request.getRazorpayPaymentId().equals(membership.getPaymentPaymentId())) {
+            WorkerMembershipResponse response = WorkerMembershipResponse.builder()
+                    .plan(membership.getPlan())
+                    .amount(membership.getAmount())
+                    .currency(membership.getCurrency())
+                    .status(membership.getStatus())
+                    .activatedAt(membership.getActivatedAt())
+                    .expiresAt(membership.getExpiresAt())
+                    .build();
+            return ApiResponseFactory.success(response, "Renewal payment already verified successfully",
+                    RequestContext.getRequestId(), httpServletRequest.getRequestURI(), startTime);
+        }
+
+        boolean isValidSignature;
+        boolean isDummy = razorpayKeyId == null || razorpayKeyId.isEmpty() || razorpayKeyId.equals("dummy") || razorpayKeyId.contains("dummy") || (request.getRazorpayOrderId() != null && request.getRazorpayOrderId().startsWith("order_mock_"));
+
+        if (isDummy) {
+            isValidSignature = true;
+        } else {
+            isValidSignature = verifyRazorpaySignature(
+                    request.getRazorpayOrderId(),
+                    request.getRazorpayPaymentId(),
+                    request.getRazorpaySignature(),
+                    razorpayKeySecret
+            );
+        }
+
+        if (!isValidSignature) {
+            throw new ValidationException("INVALID_SIGNATURE", "Payment verification failed: signature is invalid");
+        }
+
+        String mockPaymentId = request.getRazorpayPaymentId() != null ? request.getRazorpayPaymentId() : "pay_mock_" + System.currentTimeMillis();
+        String paymentMethod = null;
+
+        if (!isDummy) {
+            String paymentUrl = "https://api.razorpay.com/v1/payments/" + request.getRazorpayPaymentId();
+            HttpHeaders headers = new HttpHeaders();
+            headers.setBasicAuth(razorpayKeyId, razorpayKeySecret);
+            HttpEntity<Void> entity = new HttpEntity<>(headers);
+
+            try {
+                ResponseEntity<Map> response = restTemplate.exchange(paymentUrl, HttpMethod.GET, entity, Map.class);
+                if (response.getStatusCode() == HttpStatus.OK) {
+                    Map body = response.getBody();
+                    String rStatus = (String) body.get("status");
+                    String rOrderId = (String) body.get("order_id");
+                    Object rAmountObj = body.get("amount");
+                    Long rAmount = rAmountObj instanceof Number ? ((Number) rAmountObj).longValue() : Long.parseLong(rAmountObj.toString());
+                    String rCurrency = (String) body.get("currency");
+                    String rMethod = (String) body.get("method");
+                    paymentMethod = rMethod;
+
+                    if (!request.getRazorpayOrderId().equals(rOrderId) ||
+                            !membership.getAmount().equals(rAmount) ||
+                            !CURRENCY_INR.equalsIgnoreCase(rCurrency) ||
+                            !("captured".equalsIgnoreCase(rStatus) || "authorized".equalsIgnoreCase(rStatus))) {
+                        throw new ValidationException("PAYMENT_MISMATCH", "Payment details from Razorpay do not match the expected plan/amount/order");
+                    }
+                } else {
+                    throw new ValidationException("RECONCILIATION_FAILED", "Failed to contact Razorpay to verify payment status");
+                }
+            } catch (Exception e) {
+                if (e instanceof ValidationException) {
+                    throw e;
+                }
+                throw new ValidationException("RECONCILIATION_FAILED", "Error reconciling payment with Razorpay: " + e.getMessage());
+            }
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime currentExpiresAt = membership.getExpiresAt();
+        LocalDateTime newExpiresAt;
+
+        if (currentExpiresAt.isAfter(now)) {
+            newExpiresAt = currentExpiresAt.plusMonths(1);
+        } else {
+            newExpiresAt = now.plusMonths(1);
+        }
+
+        membership.setStatus("ACTIVE");
+        membership.setExpiresAt(newExpiresAt);
+        membership.setPaymentPaymentId(isDummy ? mockPaymentId : request.getRazorpayPaymentId());
+        membership.setPaymentSignature(isDummy ? (request.getRazorpaySignature() != null ? request.getRazorpaySignature() : "sig_mock_" + System.currentTimeMillis()) : request.getRazorpaySignature());
+        
+        workerMembershipRepository.save(membership);
+        
+        workerPaymentHistoryService.recordPaymentSuccess(membership, membership.getPaymentPaymentId(), request.getRazorpayOrderId(), membership.getAmount(), membership.getCurrency(), paymentMethod);
+
+        notificationHelper.sendNotification(
+                currentUser,
+                "Membership Renewed",
+                "Your " + membership.getPlan() + " has been renewed successfully.",
+                NotificationCategory.PAYMENTS,
+                NotificationPriority.HIGH,
+                "MEMBERSHIP_DETAILS"
+        );
+
+        WorkerMembershipResponse response = WorkerMembershipResponse.builder()
+                .plan(membership.getPlan())
+                .amount(membership.getAmount())
+                .currency(membership.getCurrency())
+                .status(membership.getStatus())
+                .activatedAt(membership.getActivatedAt())
+                .expiresAt(membership.getExpiresAt())
+                .build();
+
+        return ApiResponseFactory.success(response, "Renewal payment verified successfully",
+                RequestContext.getRequestId(), httpServletRequest.getRequestURI(), startTime);
+    }
+
     @GetMapping
     @Transactional(readOnly = true)
     public ApiResponse<WorkerMembershipResponse> getMembershipStatus(
@@ -332,15 +549,52 @@ public class MembershipController {
 
         Optional<WorkerMembership> membership = workerMembershipRepository.findByWorkerProfileId(profile.getId());
         
-        WorkerMembershipResponse response = membership.map(m -> WorkerMembershipResponse.builder()
-                .plan(m.getPlan())
-                .amount(m.getAmount())
-                .currency(m.getCurrency())
-                .status(m.getStatus())
-                .activatedAt(m.getActivatedAt())
-                .build()).orElse(null);
+        WorkerMembershipResponse response = membership.map(m -> {
+            Long daysRemaining = null;
+            if (m.getExpiresAt() != null) {
+                long days = java.time.temporal.ChronoUnit.DAYS.between(LocalDateTime.now(), m.getExpiresAt());
+                daysRemaining = Math.max(0, days);
+            }
+            return WorkerMembershipResponse.builder()
+                    .plan(m.getPlan())
+                    .amount(m.getAmount())
+                    .currency(m.getCurrency())
+                    .status(m.getStatus())
+                    .activatedAt(m.getActivatedAt())
+                    .expiresAt(m.getExpiresAt())
+                    .daysRemaining(daysRemaining)
+                    .build();
+        }).orElse(null);
 
         return ApiResponseFactory.success(response, "Membership status retrieved successfully",
+                RequestContext.getRequestId(), httpServletRequest.getRequestURI(), startTime);
+    }
+
+    @GetMapping("/payments")
+    @Transactional(readOnly = true)
+    public ApiResponse<List<WorkerPaymentHistoryResponse>> getPaymentHistory(
+            @AuthenticationPrincipal UserDetails userDetails,
+            HttpServletRequest httpServletRequest) {
+        long startTime = getStartTime(httpServletRequest);
+        User currentUser = fetchCurrentUser(userDetails);
+        WorkerProfile profile = fetchWorkerProfile(currentUser);
+
+        List<WorkerPaymentHistory> historyList = workerPaymentHistoryService.getWorkerPaymentHistory(profile.getId());
+        
+        List<WorkerPaymentHistoryResponse> responseList = historyList.stream()
+                .map(h -> WorkerPaymentHistoryResponse.builder()
+                        .id(h.getId())
+                        .amount(h.getAmount())
+                        .currency(h.getCurrency())
+                        .status(h.getStatus())
+                        .paidAt(h.getPaidAt())
+                        .paymentId(h.getPaymentId())
+                        .orderId(h.getOrderId())
+                        .paymentMethod(h.getPaymentMethod())
+                        .build())
+                .collect(Collectors.toList());
+
+        return ApiResponseFactory.success(responseList, "Payment history retrieved successfully",
                 RequestContext.getRequestId(), httpServletRequest.getRequestURI(), startTime);
     }
 

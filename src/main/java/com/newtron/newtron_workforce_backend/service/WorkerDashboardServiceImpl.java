@@ -29,6 +29,8 @@ public class WorkerDashboardServiceImpl implements WorkerDashboardService {
     private final com.newtron.newtron_workforce_backend.repository.WorkerEarningRepository workerEarningRepository;
     private final com.newtron.newtron_workforce_backend.repository.WorkerReviewRepository workerReviewRepository;
     private final com.newtron.newtron_workforce_backend.repository.SavedJobRepository savedJobRepository;
+    private final com.newtron.newtron_workforce_backend.repository.WorkerAddressRepository workerAddressRepository;
+    private final com.newtron.newtron_workforce_backend.repository.NotInterestedJobRepository notInterestedJobRepository;
 
     @Transactional(readOnly = true)
     private WorkerSummaryDto buildWorkerSummary(User currentUser, WorkerProfile profile, WorkerProfessional professional) {
@@ -100,7 +102,13 @@ public class WorkerDashboardServiceImpl implements WorkerDashboardService {
     private final com.newtron.newtron_workforce_backend.repository.NotificationRepository notificationRepository;
 
     private com.newtron.newtron_workforce_backend.dto.WorkerQuickActionsDto buildQuickActions(User currentUser) {
-        long availableJobs = jobRepository.countActiveJobs();
+        java.util.List<Long> hiddenJobIds = notInterestedJobRepository.findHiddenJobIdsByWorkerId(currentUser.getId());
+        long availableJobs;
+        if (hiddenJobIds == null || hiddenJobIds.isEmpty()) {
+            availableJobs = jobRepository.countAvailableJobs();
+        } else {
+            availableJobs = jobRepository.countAvailableJobsExcludingHidden(hiddenJobIds);
+        }
         long appliedJobs = applicationRepository.countByWorkerId(currentUser.getId());
         long savedJobs = savedJobRepository.countByWorkerId(currentUser.getId());
         long unreadAlerts = notificationRepository.countByUserIdAndIsReadFalseAndDeletedFalse(currentUser.getId());
@@ -157,8 +165,8 @@ public class WorkerDashboardServiceImpl implements WorkerDashboardService {
 
     private java.util.List<com.newtron.newtron_workforce_backend.dto.WorkerActivityDto> buildRecentActivities(
             User currentUser, 
-            WorkerProfile profile, 
-            java.util.List<com.newtron.newtron_workforce_backend.entity.Application> applications) {
+            WorkerProfile profile) {
+        java.util.List<com.newtron.newtron_workforce_backend.entity.Application> recentApplications = applicationRepository.findRecentByWorkerId(currentUser.getId(), org.springframework.data.domain.PageRequest.of(0, 5));
         java.util.List<com.newtron.newtron_workforce_backend.dto.WorkerActivityDto> activities = new java.util.ArrayList<>();
 
         // 1. Fetch worker memberships (Membership Activated event)
@@ -176,7 +184,7 @@ public class WorkerDashboardServiceImpl implements WorkerDashboardService {
         });
 
         // 2. Fetch worker applications (Application Submitted event)
-        for (com.newtron.newtron_workforce_backend.entity.Application app : applications) {
+        for (com.newtron.newtron_workforce_backend.entity.Application app : recentApplications) {
             String jobTitle = app.getJob() != null ? app.getJob().getTitle() : "Unknown Job";
             String category = app.getJob() != null ? app.getJob().getCategory() : "General";
             activities.add(com.newtron.newtron_workforce_backend.dto.WorkerActivityDto.builder()
@@ -226,8 +234,7 @@ public class WorkerDashboardServiceImpl implements WorkerDashboardService {
     public java.util.List<com.newtron.newtron_workforce_backend.dto.WorkerActivityDto> getRecentActivities(User currentUser) {
         WorkerProfile profile = workerProfileRepository.findByUserId(currentUser.getId())
                 .orElseThrow(() -> new ResourceNotFoundException("PROFILE_NOT_FOUND", "Worker profile not found for this user"));
-        java.util.List<com.newtron.newtron_workforce_backend.entity.Application> applications = applicationRepository.findByWorkerId(currentUser.getId());
-        return buildRecentActivities(currentUser, profile, applications);
+        return buildRecentActivities(currentUser, profile);
     }
 
     private java.util.List<com.newtron.newtron_workforce_backend.dto.JobRecommendationDto> buildRecommendedJobs(
@@ -256,6 +263,23 @@ public class WorkerDashboardServiceImpl implements WorkerDashboardService {
                 skill1, skill2, org.springframework.data.domain.PageRequest.of(0, 50)
         );
 
+        java.util.Map<Long, Long> filledCountsMap = new java.util.HashMap<>();
+        if (!matchedJobs.isEmpty()) {
+            java.util.List<Long> jobIds = matchedJobs.stream().map(j -> j.getId()).collect(java.util.stream.Collectors.toList());
+            java.util.List<Object[]> filledResults = applicationRepository.countFilledByJobIds(jobIds);
+            for (Object[] result : filledResults) {
+                if (result.length >= 2 && result[0] != null && result[1] != null) {
+                    filledCountsMap.put(((Number) result[0]).longValue(), ((Number) result[1]).longValue());
+                }
+            }
+        }
+
+        // Fetch worker location once
+        com.newtron.newtron_workforce_backend.entity.WorkerAddress address = null;
+        if (professional != null && professional.getWorkerProfile() != null) {
+            address = workerAddressRepository.findByWorkerProfileId(professional.getWorkerProfile().getId()).orElse(null);
+        }
+
         java.util.List<com.newtron.newtron_workforce_backend.dto.JobRecommendationDto> recommendations = new java.util.ArrayList<>();
         for (com.newtron.newtron_workforce_backend.entity.Job job : matchedJobs) {
             // Exclude already applied
@@ -270,8 +294,8 @@ public class WorkerDashboardServiceImpl implements WorkerDashboardService {
 
             // Exclude fully hired/filled positions
             int required = job.getWorkersRequired() != null ? job.getWorkersRequired() : 1;
-            long hired = applicationRepository.countByJobIdAndStatus(job.getId(), "Hired");
-            if (hired >= required) {
+            long filled = filledCountsMap.getOrDefault(job.getId(), 0L);
+            if (filled >= required) {
                 continue;
             }
 
@@ -291,6 +315,24 @@ public class WorkerDashboardServiceImpl implements WorkerDashboardService {
             String companyName = (job.getRecruiter() != null && job.getRecruiter().getFullName() != null) 
                     ? job.getRecruiter().getFullName() : "Newtron Client";
 
+            String distanceStr = null;
+            if (address != null && address.getLatitude() != null && address.getLongitude() != null &&
+                    job.getLatitude() != null && job.getLongitude() != null) {
+                double workerLat = address.getLatitude();
+                double workerLon = address.getLongitude();
+                double jobLat = job.getLatitude();
+                double jobLon = job.getLongitude();
+                
+                double dLat = Math.toRadians(jobLat - workerLat);
+                double dLon = Math.toRadians(jobLon - workerLon);
+                double a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                           Math.cos(Math.toRadians(workerLat)) * Math.cos(Math.toRadians(jobLat)) *
+                           Math.sin(dLon / 2) * Math.sin(dLon / 2);
+                double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+                double distanceVal = 6371.0 * c;
+                distanceStr = String.format(java.util.Locale.US, "%.1f KM", distanceVal);
+            }
+
             recommendations.add(com.newtron.newtron_workforce_backend.dto.JobRecommendationDto.builder()
                     .id(job.getId().toString())
                     .company(companyName)
@@ -298,8 +340,7 @@ public class WorkerDashboardServiceImpl implements WorkerDashboardService {
                     .location(job.getCity())
                     .dailyWage(wageVal)
                     .shiftHours(job.getDuration() != null ? job.getDuration() : "8 Hours")
-                    .rating(4.8)
-                    .distance(job.getDistance() != null ? job.getDistance() : "2.5 km")
+                    .distance(distanceStr)
                     .isApplied(false)
                     .build());
 
@@ -335,7 +376,7 @@ public class WorkerDashboardServiceImpl implements WorkerDashboardService {
                 .availability(buildWorkerAvailability(professional))
                 .quickActions(buildQuickActions(currentUser))
                 .stats(buildWorkerStats(currentUser))
-                .recentActivities(buildRecentActivities(currentUser, profile, applications))
+                .recentActivities(buildRecentActivities(currentUser, profile))
                 .recommendedJobs(buildRecommendedJobs(currentUser, professional, applications))
                 .build();
     }

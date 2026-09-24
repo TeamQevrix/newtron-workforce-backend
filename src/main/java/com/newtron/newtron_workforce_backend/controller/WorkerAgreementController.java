@@ -13,6 +13,12 @@ import com.newtron.newtron_workforce_backend.entity.Application;
 import com.newtron.newtron_workforce_backend.enums.AgreementStatus;
 import com.newtron.newtron_workforce_backend.repository.AgreementRepository;
 import com.newtron.newtron_workforce_backend.repository.ApplicationRepository;
+import com.newtron.newtron_workforce_backend.service.NotificationHelper;
+import com.newtron.newtron_workforce_backend.entity.WorkOrder;
+import com.newtron.newtron_workforce_backend.enums.WorkOrderStatus;
+import com.newtron.newtron_workforce_backend.repository.WorkOrderRepository;
+import com.newtron.newtron_workforce_backend.enums.NotificationCategory;
+import com.newtron.newtron_workforce_backend.enums.NotificationPriority;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -32,6 +38,8 @@ public class WorkerAgreementController {
     private final UserRepository userRepository;
     private final ApplicationRepository applicationRepository;
     private final AgreementRepository agreementRepository;
+    private final NotificationHelper notificationHelper;
+    private final WorkOrderRepository workOrderRepository;
 
     @GetMapping
     public ApiResponse<List<WorkerAgreementDto>> getAgreements(
@@ -115,6 +123,40 @@ public class WorkerAgreementController {
         application.setStatus("Offered");
         applicationRepository.save(application);
 
+        if (workOrderRepository.findByAgreementId(agreement.getId()).isEmpty()) {
+            WorkOrder workOrder = WorkOrder.builder()
+                    .agreement(agreement)
+                    .company(agreement.getCompany())
+                    .job(agreement.getJob())
+                    .worker(agreement.getWorker())
+                    .status(WorkOrderStatus.ACTIVE)
+                    .engagementType(agreement.getEngagementType())
+                    .dailyWage(agreement.getDailyWage())
+                    .monthlySalary(agreement.getMonthlySalary())
+                    .commissionRate(agreement.getCommissionRate())
+                    .commissionPayer(agreement.getCommissionPayer())
+                    .commissionAmount(agreement.getCommissionAmount())
+                    .workOrderNumber("TEMP-" + agreement.getId())
+                    .build();
+            
+            workOrder = workOrderRepository.save(workOrder);
+            workOrder.setWorkOrderNumber("WO-" + workOrder.getId());
+            workOrderRepository.save(workOrder);
+        }
+
+        if (agreement.getCompany() != null && agreement.getCompany().getOwner() != null) {
+            String workerName = agreement.getWorkerNameSnapshot() != null ? agreement.getWorkerNameSnapshot() : "A worker";
+            String jobTitle = agreement.getJobTitleSnapshot() != null ? agreement.getJobTitleSnapshot() : "a job";
+            notificationHelper.sendNotification(
+                    agreement.getCompany().getOwner(),
+                    "Agreement Accepted",
+                    workerName + " has accepted the agreement for " + jobTitle + ".",
+                    NotificationCategory.OFFERS,
+                    NotificationPriority.HIGH,
+                    "APPLICATION_DETAILS:" + application.getId()
+            );
+        }
+
         return ApiResponseFactory.success(mapToDto(agreement), "Agreement accepted successfully",
                 RequestContext.getRequestId(), httpServletRequest.getRequestURI(), startTime);
     }
@@ -153,10 +195,18 @@ public class WorkerAgreementController {
                 .jobId(agreement.getJob().getId())
                 .companyId(agreement.getCompany().getId())
                 .workerId(agreement.getWorker().getId())
+                .workerNameSnapshot(agreement.getWorkerNameSnapshot())
+                .companyNameSnapshot(agreement.getCompanyNameSnapshot())
+                .jobTitleSnapshot(agreement.getJobTitleSnapshot())
+                .jobDescriptionSnapshot(agreement.getJobDescriptionSnapshot())
+                .workLocationSnapshot(agreement.getWorkLocationSnapshot())
+                .primarySkillSnapshot(agreement.getPrimarySkillSnapshot())
                 .engagementType(agreement.getEngagementType())
                 .dailyWage(agreement.getDailyWage())
                 .monthlySalary(agreement.getMonthlySalary())
                 .commissionRate(agreement.getCommissionRate())
+                .commissionPayer(agreement.getCommissionPayer())
+                .commissionAmount(agreement.getCommissionAmount())
                 .engagementDurationType(agreement.getEngagementDurationType())
                 .durationValue(agreement.getDurationValue())
                 .duration(agreement.getDuration())
@@ -169,6 +219,9 @@ public class WorkerAgreementController {
                 .paymentDueTerms(agreement.getPaymentDueTerms())
                 .noticeDays(agreement.getNoticeDays())
                 .cancellationTerms(agreement.getCancellationTerms())
+                .clientCustomTerms(agreement.getClientCustomTerms())
+                .agreementVersion(agreement.getAgreementVersion())
+                .isLocked(agreement.getIsLocked())
                 .build();
     }
 

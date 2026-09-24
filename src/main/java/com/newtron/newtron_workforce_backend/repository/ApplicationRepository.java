@@ -46,5 +46,11 @@ public interface ApplicationRepository extends JpaRepository<Application, Long> 
 
     @org.springframework.data.jpa.repository.Query("SELECT a.worker.id, COUNT(a) FROM Application a WHERE a.worker.id IN :workerIds AND a.status = 'Completed' GROUP BY a.worker.id")
     List<Object[]> countCompletedJobsByWorkerIds(@org.springframework.data.repository.query.Param("workerIds") List<Long> workerIds);
+
+    @org.springframework.data.jpa.repository.Query("SELECT a.job.id, COUNT(a) FROM Application a WHERE a.job.id IN :jobIds AND a.status IN ('Hired', 'Completed') GROUP BY a.job.id")
+    List<Object[]> countFilledByJobIds(@org.springframework.data.repository.query.Param("jobIds") List<Long> jobIds);
+
+    @org.springframework.data.jpa.repository.Query("SELECT a FROM Application a JOIN FETCH a.job j WHERE a.worker.id = :workerId ORDER BY a.id DESC")
+    List<Application> findRecentByWorkerId(@org.springframework.data.repository.query.Param("workerId") Long workerId, org.springframework.data.domain.Pageable pageable);
 }
 

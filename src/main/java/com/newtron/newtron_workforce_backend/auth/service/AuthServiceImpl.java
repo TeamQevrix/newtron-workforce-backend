@@ -77,6 +77,11 @@ public class AuthServiceImpl implements AuthService {
             if (userOpt.isEmpty()) {
                 throw new ResourceNotFoundException("USER_NOT_FOUND", "No account found. Please create an account.");
             }
+        } else if (request.getPurpose() == com.newtron.newtron_workforce_backend.auth.otp.entity.OtpPurpose.FORGOT_PASSWORD) {
+            if (userOpt.isEmpty()) {
+                // Do not send OTP to avoid enumeration, but simulate success
+                return;
+            }
         }
 
         // Delegate to OtpService
@@ -141,6 +146,19 @@ public class AuthServiceImpl implements AuthService {
 
             userRepository.save(user);
             AuditLogger.logAction("USER_REGISTERED", user.getId().toString(), "Role: " + role);
+        } else if (request.getPurpose() == com.newtron.newtron_workforce_backend.auth.otp.entity.OtpPurpose.FORGOT_PASSWORD) {
+            if (userOpt.isEmpty()) {
+                throw new BusinessException("INVALID_OTP", "Invalid OTP entered."); // Prevents enumeration
+            }
+            user = userOpt.get();
+            String rawToken = UUID.randomUUID().toString();
+            user.setPasswordResetTokenHash(hashToken(rawToken));
+            user.setPasswordResetExpiresAt(java.time.LocalDateTime.now().plusMinutes(15));
+            userRepository.save(user);
+            return AuthResponse.builder()
+                    .verificationCompleted(true)
+                    .resetToken(rawToken)
+                    .build();
         } else {
             // Other purposes: verify only
             return AuthResponse.builder()
@@ -213,7 +231,7 @@ public class AuthServiceImpl implements AuthService {
                 .isNewUser(request.getPurpose() == com.newtron.newtron_workforce_backend.auth.otp.entity.OtpPurpose.SIGNUP)
                 .profileCompleted(isCompleted)
                 .verificationCompleted(user.getMobileVerified())
-                .membershipStatus(user.getMembershipActive() ? "ACTIVE" : "INACTIVE")
+                .membershipStatus(getMembershipStatus(user))
                 .membershipPlan(membershipPlan)
                 .requiresOnboarding(!isCompleted)
                 .displayName(user.getFullName())
@@ -294,7 +312,7 @@ public class AuthServiceImpl implements AuthService {
                 .role(user.getRole().name())
                 .profileCompleted(isCompleted)
                 .verificationCompleted(user.getMobileVerified())
-                .membershipStatus(user.getMembershipActive() ? "ACTIVE" : "INACTIVE")
+                .membershipStatus(getMembershipStatus(user))
                 .membershipPlan(membershipPlan)
                 .requiresOnboarding(!isCompleted)
                 .displayName(user.getFullName())
@@ -350,7 +368,7 @@ public class AuthServiceImpl implements AuthService {
                 .role(currentUser.getRole().name())
                 .mobile(currentUser.getMobile())
                 .accountStatus(currentUser.getStatus().name())
-                .membershipStatus(currentUser.getMembershipActive() ? "ACTIVE" : "INACTIVE")
+                .membershipStatus(getMembershipStatus(currentUser))
                 .membershipPlan(membershipPlan)
                 .verificationStatus(currentUser.getMobileVerified() ? "VERIFIED" : "UNVERIFIED")
                 .profileCompletion(isCompleted ? 100.0 : 0.0)
@@ -538,12 +556,37 @@ public class AuthServiceImpl implements AuthService {
                 .isNewUser(false)
                 .profileCompleted(isCompleted)
                 .verificationCompleted(user.getMobileVerified())
-                .membershipStatus(user.getMembershipActive() ? "ACTIVE" : "INACTIVE")
+                .membershipStatus(getMembershipStatus(user))
                 .membershipPlan(membershipPlan)
                 .requiresOnboarding(!isCompleted)
                 .displayName(user.getFullName())
                 .profilePhoto(null)
                 .build();
+    }
+
+    @Override
+    @Transactional
+    public void resetPassword(ResetPasswordRequest request) {
+        String hashedToken = hashToken(request.getResetToken());
+        User user = userRepository.findByPasswordResetTokenHash(hashedToken)
+                .orElseThrow(() -> new BusinessException("INVALID_TOKEN", "Invalid or expired reset token."));
+
+        if (user.getPasswordResetExpiresAt() == null || user.getPasswordResetExpiresAt().isBefore(java.time.LocalDateTime.now())) {
+            throw new BusinessException("EXPIRED_TOKEN", "Reset token has expired.");
+        }
+
+        user.setPasswordHash(passwordEncoder.encode(request.getNewPassword()));
+        user.setPasswordResetTokenHash(null);
+        user.setPasswordResetExpiresAt(null);
+
+        // Optional: invalidate all active sessions for security
+        List<UserSession> sessions = userSessionRepository.findAllByUserIdAndActiveTrue(user.getId());
+        sessions.forEach(s -> s.setActive(false));
+        userSessionRepository.saveAll(sessions);
+        user.setTokenVersion(user.getTokenVersion() + 1);
+
+        userRepository.save(user);
+        AuditLogger.logAction("PASSWORD_RESET", user.getId().toString(), "Password reset successfully via OTP flow");
     }
 
     private void syncProfileCompletedFlag(User user) {
@@ -570,6 +613,21 @@ public class AuthServiceImpl implements AuthService {
                 }
             });
         }
+    }
+
+    private String getMembershipStatus(User user) {
+        if (user.getRole() == Role.WORKER && Boolean.TRUE.equals(user.getMembershipActive())) {
+            return workerProfileRepository.findByUserId(user.getId())
+                    .flatMap(wp -> workerMembershipRepository.findByWorkerProfileId(wp.getId()))
+                    .map(m -> {
+                        if (m.getExpiresAt() != null && m.getExpiresAt().isBefore(java.time.LocalDateTime.now())) {
+                            return "EXPIRED";
+                        }
+                        return "ACTIVE";
+                    })
+                    .orElse("ACTIVE");
+        }
+        return user.getMembershipActive() != null && user.getMembershipActive() ? "ACTIVE" : "INACTIVE";
     }
 
     private String getMembershipPlan(User user) {

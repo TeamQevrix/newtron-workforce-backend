@@ -8,6 +8,7 @@ import com.newtron.newtron_workforce_backend.common.response.ApiResponse;
 import com.newtron.newtron_workforce_backend.common.response.ApiResponseFactory;
 import com.newtron.newtron_workforce_backend.dto.WorkerBasicProfileRequest;
 import com.newtron.newtron_workforce_backend.dto.WorkerBasicProfileResponse;
+import com.newtron.newtron_workforce_backend.dto.request.ChangePasswordRequest;
 import com.newtron.newtron_workforce_backend.service.WorkerProfileService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -91,6 +92,20 @@ public class WorkerProfileController {
         com.newtron.newtron_workforce_backend.dto.OnDemandAvailabilityResponse response = workerProfileService.updateOnDemandAvailability(request, currentUser);
         
         return ApiResponseFactory.success(response, response.getMessage(),
+                RequestContext.getRequestId(), httpServletRequest.getRequestURI(), startTime);
+    }
+
+    @PostMapping("/change-password")
+    public ApiResponse<Void> changePassword(
+            @Valid @RequestBody ChangePasswordRequest request,
+            @AuthenticationPrincipal UserDetails userDetails,
+            HttpServletRequest httpServletRequest) {
+        long startTime = getStartTime(httpServletRequest);
+        User currentUser = fetchCurrentUser(userDetails);
+        
+        workerProfileService.changePassword(request, currentUser);
+        
+        return ApiResponseFactory.success(null, "Password changed successfully",
                 RequestContext.getRequestId(), httpServletRequest.getRequestURI(), startTime);
     }
 

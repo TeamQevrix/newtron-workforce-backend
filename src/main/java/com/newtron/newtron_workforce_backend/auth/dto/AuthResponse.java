@@ -29,4 +29,7 @@ public class AuthResponse {
     private Long recruiterId;
     private String onboardingStep;
     private Set<String> permissions;
+
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+    private String resetToken;
 }

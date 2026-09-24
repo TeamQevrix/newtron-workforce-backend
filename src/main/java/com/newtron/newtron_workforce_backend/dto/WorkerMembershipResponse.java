@@ -18,4 +18,6 @@ public class WorkerMembershipResponse {
     private String currency;
     private String status;
     private LocalDateTime activatedAt;
+    private LocalDateTime expiresAt;
+    private Long daysRemaining;
 }

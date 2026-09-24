@@ -12,4 +12,5 @@ public interface AuthService {
     CurrentUserResponse getMe(User currentUser);
     UserResponse register(RegisterRequest request);
     AuthResponse login(LoginRequest request);
+    void resetPassword(ResetPasswordRequest request);
 }
