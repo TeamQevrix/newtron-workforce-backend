@@ -2,12 +2,12 @@ package com.newtron.newtron_workforce_backend.auth.otp.provider;
 
 import com.newtron.newtron_workforce_backend.auth.otp.entity.OtpPurpose;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
 @Slf4j
 @Component
-@ConditionalOnMissingBean(OtpProvider.class)
+@Profile("prod")
 public class NoOpOtpProvider implements OtpProvider {
 
     @Override
