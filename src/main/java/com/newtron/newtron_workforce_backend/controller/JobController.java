@@ -808,6 +808,10 @@ public class JobController {
                     .verified(false)
                     .rating(null)
                     .build());
+
+            if (dtos.size() >= 5) {
+                break;
+            }
         }
 
         return dtos;

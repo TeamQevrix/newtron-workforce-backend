@@ -1,5 +1,7 @@
 package com.newtron.newtron_workforce_backend.service;
 
+import com.newtron.newtron_workforce_backend.common.exception.ResourceNotFoundException;
+
 import com.newtron.newtron_workforce_backend.dto.TeamRegistrationResponse;
 import com.newtron.newtron_workforce_backend.dto.TeamMemberResponse;
 import com.newtron.newtron_workforce_backend.entity.Team;
@@ -58,6 +60,18 @@ public class RecruiterTeamService {
         Page<Team> teams = teamRepository.findAll(spec, pageable);
 
         return teams.map(this::mapToResponse);
+    }
+
+    @Transactional(readOnly = true)
+    public TeamRegistrationResponse getTeamById(Long teamId) {
+        Team team = teamRepository.findById(teamId)
+                .orElseThrow(() -> new ResourceNotFoundException("TEAM_NOT_FOUND", "Team not found"));
+        
+        if (team.isDeleted()) {
+            throw new ResourceNotFoundException("TEAM_NOT_FOUND", "Team not found");
+        }
+        
+        return mapToResponse(team);
     }
 
     private TeamRegistrationResponse mapToResponse(Team team) {

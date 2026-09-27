@@ -11,6 +11,7 @@ public class CurrentUserResponse {
     private Long userId;
     private String role;
     private String mobile;
+    private String displayName;
     private String accountStatus;
     private String membershipStatus;
     private String membershipPlan;

@@ -1,6 +1,7 @@
 package com.newtron.newtron_workforce_backend.entity;
 
 import com.newtron.newtron_workforce_backend.auth.entity.User;
+import com.newtron.newtron_workforce_backend.enums.ProfileType;
 import jakarta.persistence.*;
 import lombok.*;
 import java.time.LocalDateTime;
@@ -21,6 +22,11 @@ public class Company {
     @OneToOne
     @JoinColumn(name = "owner_id", nullable = false, unique = true)
     private User owner;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "profile_type", nullable = false, length = 30)
+    @Builder.Default
+    private ProfileType profileType = ProfileType.COMPANY;
 
     @Column(name = "company_name", nullable = false)
     private String companyName;
@@ -62,6 +68,9 @@ public class Company {
         updatedAt = now;
         if (profileCompleted == null) {
             profileCompleted = false;
+        }
+        if (profileType == null) {
+            profileType = ProfileType.COMPANY;
         }
     }
 

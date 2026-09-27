@@ -71,6 +71,29 @@ public class WorkerMembershipInterceptor implements HandlerInterceptor {
         WorkerProfile profile = profileOpt.get();
 
         Optional<WorkerMembership> membershipOpt = workerMembershipRepository.findByWorkerProfileId(profile.getId());
+        String uri = request.getRequestURI();
+        boolean isTeamApi = uri != null && uri.startsWith("/api/v1/worker/teams");
+        boolean isTeamRegistration = isTeamApi && "POST".equalsIgnoreCase(request.getMethod()) && uri.equals("/api/v1/worker/teams");
+
+        // TEAM PAYMENT ACCESS GATE FIX — 24-09-2026 15:00:00
+        // Reason:
+        // 1. Backend previously allowed Team API access when WorkerMembership was missing.
+        // 2. TEAM requires positive confirmation of ACTIVE TEAM_MONTHLY membership.
+        // 3. Team Registration remains allowed before payment.
+        // 4. Individual membership must never authorize Team Management.
+        if (isTeamApi && !isTeamRegistration) {
+            if (membershipOpt.isEmpty() || !"TEAM_MONTHLY".equals(membershipOpt.get().getPlan())) {
+                sendForbiddenError(request, response, "TEAM_MEMBERSHIP_REQUIRED", "Active Team membership required.");
+                return false;
+            }
+            WorkerMembership membership = membershipOpt.get();
+            if (membership.getExpiresAt() != null && !membership.getExpiresAt().isAfter(LocalDateTime.now())) {
+                sendForbiddenError(request, response, "MEMBERSHIP_EXPIRED", "Team membership expired. Renewal required.");
+                return false;
+            }
+            return true;
+        }
+
         if (membershipOpt.isEmpty()) {
             return true;
         }
@@ -78,31 +101,35 @@ public class WorkerMembershipInterceptor implements HandlerInterceptor {
         WorkerMembership membership = membershipOpt.get();
         if (membership.getExpiresAt() != null) {
             if (!membership.getExpiresAt().isAfter(LocalDateTime.now())) {
-                response.setStatus(HttpStatus.FORBIDDEN.value());
-                response.setContentType("application/json");
-                response.setCharacterEncoding("UTF-8");
-                
-                long startTime = getStartTime(request);
-                
-                ApiError apiError = ApiError.builder()
-                        .code("MEMBERSHIP_EXPIRED")
-                        .message("Membership expired. Renewal required.")
-                        .build();
-
-                ApiResponse<?> apiResponse = ApiResponseFactory.failure(
-                        List.of(apiError),
-                        "Membership expired. Renewal required.",
-                        (String) request.getAttribute("requestId"),
-                        request.getRequestURI(),
-                        startTime
-                );
-
-                response.getWriter().write(objectMapper.writeValueAsString(apiResponse));
+                sendForbiddenError(request, response, "MEMBERSHIP_EXPIRED", "Membership expired. Renewal required.");
                 return false;
             }
         }
 
         return true;
+    }
+
+    private void sendForbiddenError(HttpServletRequest request, HttpServletResponse response, String code, String message) throws Exception {
+        response.setStatus(HttpStatus.FORBIDDEN.value());
+        response.setContentType("application/json");
+        response.setCharacterEncoding("UTF-8");
+        
+        long startTime = getStartTime(request);
+        
+        ApiError apiError = ApiError.builder()
+                .code(code)
+                .message(message)
+                .build();
+
+        ApiResponse<?> apiResponse = ApiResponseFactory.failure(
+                List.of(apiError),
+                message,
+                (String) request.getAttribute("requestId"),
+                request.getRequestURI(),
+                startTime
+        );
+
+        response.getWriter().write(objectMapper.writeValueAsString(apiResponse));
     }
 
     private long getStartTime(HttpServletRequest request) {

@@ -1,5 +1,6 @@
 package com.newtron.newtron_workforce_backend.dto;
 
+import com.newtron.newtron_workforce_backend.enums.ProfileType;
 import lombok.Builder;
 import lombok.Data;
 
@@ -7,6 +8,7 @@ import lombok.Data;
 @Builder
 public class RecruiterCompanyProfileResponse {
     private Long id;
+    private ProfileType profileType;
     private String companyName;
     private String contactPersonName;
     private String contactMobile;

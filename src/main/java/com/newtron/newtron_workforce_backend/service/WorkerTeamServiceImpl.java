@@ -227,7 +227,56 @@ public class WorkerTeamServiceImpl implements WorkerTeamService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<TeamRegistrationResponse> getMyTeams(User currentUser) {
+    public TeamRegistrationResponse getTeamById(Long teamId, User currentUser) {
+        log.info("Fetching single team details for teamId: {} user: {}", teamId, currentUser.getMobile());
+
+        if (currentUser.getRole() != Role.WORKER) {
+            throw new ForbiddenException("INVALID_ROLE", "Only workers are permitted to view teams.");
+        }
+
+        WorkerProfile ownerProfile = workerProfileRepository.findByUserId(currentUser.getId())
+                .orElseThrow(() -> new ResourceNotFoundException("WORKER_PROFILE_NOT_FOUND", "Worker profile not found."));
+
+        if (ownerProfile.isDeleted()) {
+            throw new ResourceNotFoundException("WORKER_PROFILE_NOT_FOUND", "Worker profile is inactive or deleted.");
+        }
+
+        Team team = teamRepository.findByIdAndOwnerWorkerProfileIdAndDeletedFalse(teamId, ownerProfile.getId())
+                .orElseThrow(() -> new ResourceNotFoundException("TEAM_NOT_FOUND", "Team not found or not owned by the authenticated user."));
+
+        List<TeamMemberResponse> memberResponses = team.getMembers().stream()
+                .map(m -> TeamMemberResponse.builder()
+                        .id(m.getId())
+                        .fullName(m.getFullName())
+                        .mobileNumber(m.getMobileNumber())
+                        .primarySkillId(m.getPrimarySkill().getId())
+                        .primarySkillName(m.getPrimarySkill().getName())
+                        .experience(m.getExperience())
+                        .build())
+                .collect(Collectors.toList());
+
+        return TeamRegistrationResponse.builder()
+                .id(team.getId())
+                .uuid(team.getUuid())
+                .teamName(team.getTeamName())
+                .ownerWorkerProfileId(ownerProfile.getId())
+                .ownerName(ownerProfile.getFullName())
+                .primarySkillId(team.getPrimarySkill().getId())
+                .primarySkillName(team.getPrimarySkill().getName())
+                .aboutTeam(team.getAboutTeam())
+                .stateId(team.getState().getId())
+                .stateName(team.getState().getName())
+                .districtId(team.getDistrict().getId())
+                .districtName(team.getDistrict().getName())
+                .cityId(team.getCity().getId())
+                .cityName(team.getCity().getName())
+                .members(memberResponses)
+                .build();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<TeamRegistrationResponse> getMyTeams(User currentUser, org.springframework.data.domain.Pageable pageable) {
         log.info("Fetching all teams for user: {}", currentUser.getMobile());
 
         if (currentUser.getRole() != Role.WORKER) {
@@ -241,9 +290,9 @@ public class WorkerTeamServiceImpl implements WorkerTeamService {
             throw new ResourceNotFoundException("WORKER_PROFILE_NOT_FOUND", "Worker profile is inactive or deleted.");
         }
 
-        List<Team> teams = teamRepository.findAllByOwnerWorkerProfileId(ownerProfile.getId());
+        org.springframework.data.domain.Page<Team> teamPage = teamRepository.findAllByOwnerWorkerProfileId(ownerProfile.getId(), pageable);
 
-        return teams.stream().map(team -> {
+        return teamPage.getContent().stream().map(team -> {
             List<TeamMemberResponse> memberResponses = team.getMembers().stream()
                     .map(m -> TeamMemberResponse.builder()
                             .id(m.getId())

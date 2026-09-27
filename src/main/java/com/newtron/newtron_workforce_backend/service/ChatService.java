@@ -76,6 +76,8 @@ public class ChatService {
                     .sessionId(session.getId())
                     .companyId(session.getCompany().getId())
                     .companyName(session.getCompany().getCompanyName())
+                    .teamId(session.getTeam() != null ? session.getTeam().getId() : null)
+                    .teamName(session.getTeam() != null ? session.getTeam().getTeamName() : null)
                     .latestMessage(latestMessage != null ? latestMessage.getMessage() : null)
                     .latestMessageTimestamp(latestMessage != null ? latestMessage.getCreatedAt() : null)
                     .build();

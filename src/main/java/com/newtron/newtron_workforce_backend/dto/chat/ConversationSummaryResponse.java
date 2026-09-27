@@ -15,6 +15,8 @@ public class ConversationSummaryResponse {
     private Long sessionId;
     private Long companyId;
     private String companyName;
+    private Long teamId;
+    private String teamName;
     private String latestMessage;
     private Instant latestMessageTimestamp;
 }

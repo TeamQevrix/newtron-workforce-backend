@@ -57,14 +57,44 @@ public class WorkerTeamController {
         );
     }
 
-    @GetMapping
-    public ApiResponse<java.util.List<TeamRegistrationResponse>> getMyTeams(
+    @GetMapping("/{teamId}")
+    public ApiResponse<TeamRegistrationResponse> getTeamById(
+            @PathVariable("teamId") Long teamId,
             @AuthenticationPrincipal UserDetails userDetails,
             HttpServletRequest httpServletRequest) {
         long startTime = getStartTime(httpServletRequest);
         User currentUser = fetchCurrentUser(userDetails);
         
-        java.util.List<TeamRegistrationResponse> response = service.getMyTeams(currentUser);
+        TeamRegistrationResponse response = service.getTeamById(teamId, currentUser);
+        
+        return ApiResponseFactory.success(
+                response,
+                "Team details fetched successfully",
+                RequestContext.getRequestId(),
+                httpServletRequest.getRequestURI(),
+                startTime
+        );
+    }
+
+    @GetMapping
+    public ApiResponse<java.util.List<TeamRegistrationResponse>> getMyTeams(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @AuthenticationPrincipal UserDetails userDetails,
+            HttpServletRequest httpServletRequest) {
+        long startTime = getStartTime(httpServletRequest);
+        User currentUser = fetchCurrentUser(userDetails);
+        
+        if (page < 0) {
+            throw new com.newtron.newtron_workforce_backend.common.exception.ValidationException("INVALID_PAGE", "Page number cannot be less than zero.");
+        }
+        if (size < 1 || size > 50) {
+            throw new com.newtron.newtron_workforce_backend.common.exception.ValidationException("INVALID_SIZE", "Page size must be between 1 and 50.");
+        }
+
+        org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(page, size);
+        
+        java.util.List<TeamRegistrationResponse> response = service.getMyTeams(currentUser, pageable);
         
         return ApiResponseFactory.success(
                 response,

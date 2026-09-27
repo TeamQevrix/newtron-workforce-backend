@@ -154,4 +154,87 @@ class WorkerMembershipInterceptorTest {
 
         assertTrue(result);
     }
+
+    @Test
+    void preHandle_TeamApi_ActiveTeamMembership_Allowed() throws Exception {
+        setupAuthentication("ROLE_WORKER");
+        request.setRequestURI("/api/v1/worker/teams/my-team");
+        workerMembership.setPlan("TEAM_MONTHLY");
+        workerMembership.setExpiresAt(LocalDateTime.now().plusDays(1));
+
+        when(userRepository.findByMobile("1234567890")).thenReturn(Optional.of(workerUser));
+        when(workerProfileRepository.findByUserId(1L)).thenReturn(Optional.of(workerProfile));
+        when(workerMembershipRepository.findByWorkerProfileId(1L)).thenReturn(Optional.of(workerMembership));
+
+        boolean result = interceptor.preHandle(request, response, new Object());
+
+        assertTrue(result);
+    }
+
+    @Test
+    void preHandle_TeamApi_ActiveIndividualMembership_Forbidden() throws Exception {
+        setupAuthentication("ROLE_WORKER");
+        request.setRequestURI("/api/v1/worker/teams/my-team");
+        workerMembership.setPlan("INDIVIDUAL_MONTHLY");
+        workerMembership.setExpiresAt(LocalDateTime.now().plusDays(1));
+
+        when(userRepository.findByMobile("1234567890")).thenReturn(Optional.of(workerUser));
+        when(workerProfileRepository.findByUserId(1L)).thenReturn(Optional.of(workerProfile));
+        when(workerMembershipRepository.findByWorkerProfileId(1L)).thenReturn(Optional.of(workerMembership));
+        when(objectMapper.writeValueAsString(any())).thenReturn("{\"error\":\"Forbidden\"}");
+
+        boolean result = interceptor.preHandle(request, response, new Object());
+
+        assertFalse(result);
+        assertEquals(403, response.getStatus());
+    }
+
+    @Test
+    void preHandle_TeamApi_MissingMembership_Forbidden() throws Exception {
+        setupAuthentication("ROLE_WORKER");
+        request.setRequestURI("/api/v1/worker/teams/my-team");
+
+        when(userRepository.findByMobile("1234567890")).thenReturn(Optional.of(workerUser));
+        when(workerProfileRepository.findByUserId(1L)).thenReturn(Optional.of(workerProfile));
+        when(workerMembershipRepository.findByWorkerProfileId(1L)).thenReturn(Optional.empty());
+        when(objectMapper.writeValueAsString(any())).thenReturn("{\"error\":\"Forbidden\"}");
+
+        boolean result = interceptor.preHandle(request, response, new Object());
+
+        assertFalse(result);
+        assertEquals(403, response.getStatus());
+    }
+
+    @Test
+    void preHandle_TeamApi_ExpiredTeamMembership_Forbidden() throws Exception {
+        setupAuthentication("ROLE_WORKER");
+        request.setRequestURI("/api/v1/worker/teams/my-team");
+        workerMembership.setPlan("TEAM_MONTHLY");
+        workerMembership.setExpiresAt(LocalDateTime.now().minusDays(1));
+
+        when(userRepository.findByMobile("1234567890")).thenReturn(Optional.of(workerUser));
+        when(workerProfileRepository.findByUserId(1L)).thenReturn(Optional.of(workerProfile));
+        when(workerMembershipRepository.findByWorkerProfileId(1L)).thenReturn(Optional.of(workerMembership));
+        when(objectMapper.writeValueAsString(any())).thenReturn("{\"error\":\"Forbidden\"}");
+
+        boolean result = interceptor.preHandle(request, response, new Object());
+
+        assertFalse(result);
+        assertEquals(403, response.getStatus());
+    }
+
+    @Test
+    void preHandle_TeamApi_TeamRegistration_AllowedBeforePayment() throws Exception {
+        setupAuthentication("ROLE_WORKER");
+        request.setRequestURI("/api/v1/worker/teams");
+        request.setMethod("POST");
+
+        when(userRepository.findByMobile("1234567890")).thenReturn(Optional.of(workerUser));
+        when(workerProfileRepository.findByUserId(1L)).thenReturn(Optional.of(workerProfile));
+        when(workerMembershipRepository.findByWorkerProfileId(1L)).thenReturn(Optional.empty());
+
+        boolean result = interceptor.preHandle(request, response, new Object());
+
+        assertTrue(result);
+    }
 }

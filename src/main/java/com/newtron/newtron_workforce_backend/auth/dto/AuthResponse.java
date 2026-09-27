@@ -15,6 +15,7 @@ public class AuthResponse {
 
     private Long userId;
     private String role;
+    private String mobile;
 
     private Boolean isNewUser;
     private Boolean profileCompleted;

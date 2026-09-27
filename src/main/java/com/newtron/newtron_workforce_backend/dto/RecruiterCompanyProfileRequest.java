@@ -2,10 +2,13 @@ package com.newtron.newtron_workforce_backend.dto;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
+import com.newtron.newtron_workforce_backend.enums.ProfileType;
 import lombok.Data;
 
 @Data
 public class RecruiterCompanyProfileRequest {
+
+    private ProfileType profileType;
 
     @NotBlank(message = "Company name is required")
     @Size(min = 2, max = 150, message = "Company name must be between 2 and 150 characters")

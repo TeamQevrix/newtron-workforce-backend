@@ -48,4 +48,22 @@ public class RecruiterTeamController {
                 startTime
         );
     }
+
+    @GetMapping("/{teamId}")
+    public ApiResponse<TeamRegistrationResponse> getTeamById(
+            @PathVariable Long teamId,
+            HttpServletRequest httpServletRequest) {
+            
+        long startTime = System.currentTimeMillis();
+
+        TeamRegistrationResponse response = recruiterTeamService.getTeamById(teamId);
+
+        return ApiResponseFactory.success(
+                response,
+                "Team retrieved successfully",
+                RequestContext.getRequestId(),
+                httpServletRequest.getRequestURI(),
+                startTime
+        );
+    }
 }

@@ -10,7 +10,9 @@ public interface WorkerTeamService {
 
     TeamRegistrationResponse getMyTeam(User currentUser); // Kept for legacy compatibility temporarily
 
-    java.util.List<TeamRegistrationResponse> getMyTeams(User currentUser);
+    java.util.List<TeamRegistrationResponse> getMyTeams(User currentUser, org.springframework.data.domain.Pageable pageable);
+
+    TeamRegistrationResponse getTeamById(Long teamId, User currentUser);
 
     TeamRegistrationResponse updateTeam(Long teamId, com.newtron.newtron_workforce_backend.dto.TeamUpdateRequest request, User currentUser);
 

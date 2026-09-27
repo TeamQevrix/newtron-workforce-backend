@@ -11,6 +11,9 @@ import org.springframework.stereotype.Repository;
 import java.util.List;
 import java.util.Optional;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+
 @Repository
 public interface TeamRepository extends JpaRepository<Team, Long>, JpaSpecificationExecutor<Team> {
 
@@ -19,6 +22,9 @@ public interface TeamRepository extends JpaRepository<Team, Long>, JpaSpecificat
 
     @Query("SELECT t FROM Team t WHERE t.ownerWorkerProfile.id = :profileId AND t.deleted = false")
     List<Team> findAllByOwnerWorkerProfileId(@Param("profileId") Long profileId);
+
+    @Query("SELECT t FROM Team t WHERE t.ownerWorkerProfile.id = :profileId AND t.deleted = false")
+    Page<Team> findAllByOwnerWorkerProfileId(@Param("profileId") Long profileId, Pageable pageable);
 
     @Query("SELECT t FROM Team t WHERE t.id = :id AND t.ownerWorkerProfile.id = :profileId AND t.deleted = false")
     Optional<Team> findByIdAndOwnerWorkerProfileIdAndDeletedFalse(@Param("id") Long id, @Param("profileId") Long profileId);

@@ -11,6 +11,7 @@ import com.newtron.newtron_workforce_backend.common.response.ApiResponseFactory;
 import com.newtron.newtron_workforce_backend.dto.RecruiterCompanyProfileRequest;
 import com.newtron.newtron_workforce_backend.dto.RecruiterCompanyProfileResponse;
 import com.newtron.newtron_workforce_backend.entity.Company;
+import com.newtron.newtron_workforce_backend.enums.ProfileType;
 import com.newtron.newtron_workforce_backend.repository.CompanyRepository;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -51,6 +52,7 @@ public class RecruiterCompanyController {
         }
 
         company.setCompanyName(request.getCompanyName().trim());
+        company.setProfileType(request.getProfileType() != null ? request.getProfileType() : ProfileType.COMPANY);
         company.setContactPersonName(request.getContactPersonName().trim());
         company.setContactMobile(request.getContactMobile().trim());
         company.setCity(request.getCity().trim());
@@ -106,6 +108,7 @@ public class RecruiterCompanyController {
     private RecruiterCompanyProfileResponse mapToResponse(Company company) {
         return RecruiterCompanyProfileResponse.builder()
                 .id(company.getId())
+                .profileType(company.getProfileType())
                 .companyName(company.getCompanyName())
                 .contactPersonName(company.getContactPersonName())
                 .contactMobile(company.getContactMobile())
