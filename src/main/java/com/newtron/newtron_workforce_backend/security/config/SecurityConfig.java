@@ -43,6 +43,7 @@ public class SecurityConfig {
                 .frameOptions(frame -> frame.deny())
             )
             .authorizeHttpRequests(auth -> auth
+                .requestMatchers("/api/v1/webhooks/razorpay").permitAll()
                 .requestMatchers(SecurityConstants.PUBLIC_URLS.toArray(new String[0])).permitAll()
                 .requestMatchers("/api/v1/worker/**").hasAnyAuthority("ROLE_WORKER", "WORKER")
                 .anyRequest().authenticated()
