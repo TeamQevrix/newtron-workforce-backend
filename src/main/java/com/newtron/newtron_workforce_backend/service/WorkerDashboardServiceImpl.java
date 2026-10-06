@@ -31,6 +31,7 @@ public class WorkerDashboardServiceImpl implements WorkerDashboardService {
     private final com.newtron.newtron_workforce_backend.repository.SavedJobRepository savedJobRepository;
     private final com.newtron.newtron_workforce_backend.repository.WorkerAddressRepository workerAddressRepository;
     private final com.newtron.newtron_workforce_backend.repository.NotInterestedJobRepository notInterestedJobRepository;
+    private final StorageService storageService;
 
     @Transactional(readOnly = true)
     private WorkerSummaryDto buildWorkerSummary(User currentUser, WorkerProfile profile, WorkerProfessional professional) {
@@ -42,7 +43,7 @@ public class WorkerDashboardServiceImpl implements WorkerDashboardService {
                 .userId(currentUser.getId())
                 .workerId(profile.getId())
                 .displayName(profile.getFullName())
-                .profilePhotoUrl(profile.getPhotoStorageKey())
+                .profilePhotoUrl(profile.getPhotoStorageKey() != null ? storageService.generateDownloadUrl(profile.getPhotoStorageKey()) : null)
                 .verificationStatus(verificationStatus)
                 .available(available)
                 .role(currentUser.getRole().name())

@@ -16,4 +16,5 @@ public class WorkerDocumentResponse {
     private String fileKey;
     private String fileUrl;
     private String fileName;
+    private String documentNumber;
 }

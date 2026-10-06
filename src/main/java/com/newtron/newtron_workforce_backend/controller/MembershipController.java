@@ -227,7 +227,12 @@ public class MembershipController {
             if (membership.getActivatedAt() == null) {
                 membership.setActivatedAt(now);
             }
-            membership.setExpiresAt(now.plusMonths(1));
+            if (PLAN_INDIVIDUAL.equals(membership.getPlan())) {
+                // PAY-02: ?49 Individual membership is valid for 6 months.
+                membership.setExpiresAt(now.plusMonths(6));
+            } else {
+                membership.setExpiresAt(now.plusMonths(1));
+            }
             workerMembershipRepository.save(membership);
 
             String mockPaymentId = membership.getPaymentPaymentId();
@@ -297,7 +302,12 @@ public class MembershipController {
         if (membership.getActivatedAt() == null) {
             membership.setActivatedAt(now);
         }
-        membership.setExpiresAt(now.plusMonths(1));
+        if (PLAN_INDIVIDUAL.equals(membership.getPlan())) {
+            // PAY-02: ?49 Individual membership is valid for 6 months.
+            membership.setExpiresAt(now.plusMonths(6));
+        } else {
+            membership.setExpiresAt(now.plusMonths(1));
+        }
         workerMembershipRepository.save(membership);
         
         workerPaymentHistoryService.recordPaymentSuccess(membership, request.getRazorpayPaymentId(), request.getRazorpayOrderId(), membership.getAmount(), membership.getCurrency(), paymentMethod);
@@ -501,10 +511,19 @@ public class MembershipController {
         LocalDateTime currentExpiresAt = membership.getExpiresAt();
         LocalDateTime newExpiresAt;
 
-        if (currentExpiresAt.isAfter(now)) {
-            newExpiresAt = currentExpiresAt.plusMonths(1);
+        if (PLAN_INDIVIDUAL.equals(membership.getPlan())) {
+            // PAY-02: Extend ?49 Individual membership by 6 months.
+            if (currentExpiresAt.isAfter(now)) {
+                newExpiresAt = currentExpiresAt.plusMonths(6);
+            } else {
+                newExpiresAt = now.plusMonths(6);
+            }
         } else {
-            newExpiresAt = now.plusMonths(1);
+            if (currentExpiresAt.isAfter(now)) {
+                newExpiresAt = currentExpiresAt.plusMonths(1);
+            } else {
+                newExpiresAt = now.plusMonths(1);
+            }
         }
 
         membership.setStatus("ACTIVE");

@@ -1,5 +1,6 @@
 package com.newtron.newtron_workforce_backend.dto;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
@@ -17,6 +18,7 @@ public class WorkerSkillDto {
 
     private String skillName; // Output only
 
+    @JsonProperty("isPrimary")
     @NotNull(message = "Primary flag is required")
     private Boolean isPrimary;
 

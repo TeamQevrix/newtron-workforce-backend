@@ -46,6 +46,83 @@ public class WorkerDocumentController {
 
     private static final String AADHAAR_DOC_TYPE = "AADHAAR_CARD";
     private static final String PAN_DOC_TYPE = "PAN_CARD";
+    private static final String DRIVING_LICENSE_DOC_TYPE = "DRIVING_LICENSE";
+
+    @PostMapping("/driving-licence")
+    @Transactional
+    public ApiResponse<WorkerDocumentResponse> uploadDrivingLicence(
+            @RequestParam("file") MultipartFile file,
+            @RequestParam(value = "documentNumber", required = false) String documentNumber,
+            @AuthenticationPrincipal UserDetails userDetails,
+            HttpServletRequest httpServletRequest) {
+        long startTime = getStartTime(httpServletRequest);
+        User currentUser = fetchCurrentUser(userDetails);
+        WorkerProfile profile = fetchWorkerProfile(currentUser);
+
+        String fileKey = storageService.uploadDocument(file);
+        String originalFilename = file.getOriginalFilename();
+
+        Optional<WorkerDocument> existingDoc = workerDocumentRepository
+                .findByWorkerProfileIdAndDocumentType(profile.getId(), DRIVING_LICENSE_DOC_TYPE);
+
+        WorkerDocument document;
+        if (existingDoc.isPresent()) {
+            document = existingDoc.get();
+            document.setFileStorageKey(fileKey);
+            document.setFileName(originalFilename);
+            if (documentNumber != null) {
+                document.setDocumentNumber(documentNumber);
+            }
+        } else {
+            document = WorkerDocument.builder()
+                    .workerProfile(profile)
+                    .documentType(DRIVING_LICENSE_DOC_TYPE)
+                    .fileStorageKey(fileKey)
+                    .fileName(originalFilename)
+                    .documentNumber(documentNumber)
+                    .build();
+        }
+
+        WorkerDocument saved = workerDocumentRepository.save(document);
+
+        WorkerDocumentResponse response = WorkerDocumentResponse.builder()
+                .documentType(saved.getDocumentType())
+                .fileKey(saved.getFileStorageKey())
+                .fileUrl(storageService.generateDownloadUrl(saved.getFileStorageKey()))
+                .fileName(saved.getFileName())
+                .documentNumber(saved.getDocumentNumber())
+                .build();
+
+        return ApiResponseFactory.success(response, "Driving Licence uploaded successfully",
+                RequestContext.getRequestId(), httpServletRequest.getRequestURI(), startTime);
+    }
+
+    @GetMapping("/driving-licence")
+    public ApiResponse<WorkerDocumentResponse> getDrivingLicence(
+            @AuthenticationPrincipal UserDetails userDetails,
+            HttpServletRequest httpServletRequest) {
+        long startTime = getStartTime(httpServletRequest);
+        User currentUser = fetchCurrentUser(userDetails);
+        WorkerProfile profile = fetchWorkerProfile(currentUser);
+
+        WorkerDocument document = workerDocumentRepository
+                .findByWorkerProfileIdAndDocumentType(profile.getId(), DRIVING_LICENSE_DOC_TYPE)
+                .orElseThrow(() -> new ResourceNotFoundException("DRIVING_LICENSE_NOT_FOUND", "Driving Licence has not been uploaded yet"));
+
+        String originalName = document.getFileName() != null ? document.getFileName() :
+                document.getFileStorageKey().substring(document.getFileStorageKey().lastIndexOf("/") + 1);
+
+        WorkerDocumentResponse response = WorkerDocumentResponse.builder()
+                .documentType(document.getDocumentType())
+                .fileKey(document.getFileStorageKey())
+                .fileUrl(storageService.generateDownloadUrl(document.getFileStorageKey()))
+                .fileName(originalName)
+                .documentNumber(document.getDocumentNumber())
+                .build();
+
+        return ApiResponseFactory.success(response, "Driving Licence retrieved successfully",
+                RequestContext.getRequestId(), httpServletRequest.getRequestURI(), startTime);
+    }
 
     @PostMapping("/aadhaar")
     @Transactional
@@ -197,6 +274,42 @@ public class WorkerDocumentController {
         User currentUser = fetchCurrentUser(userDetails);
         WorkerProfile profile = fetchWorkerProfile(currentUser);
 
+        // Aadhaar Validation
+        boolean hasAadhaar = workerDocumentRepository
+                .findByWorkerProfileIdAndDocumentType(profile.getId(), AADHAAR_DOC_TYPE)
+                .isPresent();
+        if (!hasAadhaar) {
+            throw new com.newtron.newtron_workforce_backend.common.exception.ValidationException(
+                    "AADHAAR_REQUIRED",
+                    "Aadhaar Card is mandatory."
+            );
+        }
+
+        // Driver Validation
+        boolean isDriver = profile.getSkills().stream()
+                .filter(ws -> Boolean.TRUE.equals(ws.getIsPrimary()))
+                .map(ws -> ws.getSkill().getName())
+                .anyMatch(name -> name != null && name.trim().equalsIgnoreCase("Driver"));
+
+        if (isDriver) {
+            boolean hasDlNumber = request.getDrivingLicenseNumber() != null && !request.getDrivingLicenseNumber().trim().isEmpty();
+            Optional<WorkerDocument> existingDlDoc = workerDocumentRepository
+                    .findByWorkerProfileIdAndDocumentType(profile.getId(), DRIVING_LICENSE_DOC_TYPE);
+            boolean hasDlDoc = existingDlDoc.isPresent();
+
+            if (!hasDlNumber || !hasDlDoc) {
+                throw new com.newtron.newtron_workforce_backend.common.exception.ValidationException(
+                        "DRIVING_LICENSE_REQUIRED",
+                        "Driving Licence number and document are required for Driver."
+                );
+            }
+            
+            // ONB-12: Persist Driving Licence Number if it was edited without re-uploading the image
+            WorkerDocument dlDoc = existingDlDoc.get();
+            dlDoc.setDocumentNumber(request.getDrivingLicenseNumber().trim());
+            workerDocumentRepository.save(dlDoc);
+        }
+
         // Save Emergency Contact
         if (request.getEmergencyContact() == null || request.getEmergencyContact().trim().length() != 10) {
             throw new com.newtron.newtron_workforce_backend.common.exception.ValidationException("INVALID_EMERGENCY_CONTACT", "Valid 10-digit emergency contact is required");
@@ -274,6 +387,9 @@ public class WorkerDocumentController {
 
         WorkerBank bank = workerBankRepository.findByWorkerProfileId(profile.getId()).orElse(null);
 
+        WorkerDocument dlDoc = workerDocumentRepository.findByWorkerProfileIdAndDocumentType(profile.getId(), DRIVING_LICENSE_DOC_TYPE).orElse(null);
+        String dlNumber = dlDoc != null ? dlDoc.getDocumentNumber() : null;
+
         WorkerDocumentsRequest response = WorkerDocumentsRequest.builder()
                 .aadhaarCardUrl(aadhaarUrl)
                 .aadhaarFileName(aadhaarName)
@@ -286,6 +402,7 @@ public class WorkerDocumentController {
                 .accountType(bank != null ? bank.getAccountType() : null)
                 .branchName(bank != null ? bank.getBranchName() : null)
                 .emergencyContact(profile.getEmergencyContact())
+                .drivingLicenseNumber(dlNumber)
                 .build();
 
         return ApiResponseFactory.success(response, "Documents retrieved successfully",
@@ -304,6 +421,8 @@ public class WorkerDocumentController {
             lookupType = AADHAAR_DOC_TYPE;
         } else if (lookupType.equals("PAN")) {
             lookupType = PAN_DOC_TYPE;
+        } else if (lookupType.equals("DRIVING-LICENCE") || lookupType.equals("DRIVING_LICENCE")) {
+            lookupType = DRIVING_LICENSE_DOC_TYPE;
         }
 
         WorkerDocument document = workerDocumentRepository

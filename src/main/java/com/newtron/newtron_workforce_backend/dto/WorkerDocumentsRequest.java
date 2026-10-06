@@ -23,4 +23,5 @@ public class WorkerDocumentsRequest {
     private String accountType;
     private String branchName;
     private String emergencyContact;
+    private String drivingLicenseNumber;
 }

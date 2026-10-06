@@ -25,4 +25,7 @@ public class WorkerDocument extends BaseEntity {
 
     @Column(name = "file_name")
     private String fileName;
+
+    @Column(name = "document_number", length = 100)
+    private String documentNumber;
 }
