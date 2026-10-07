@@ -108,7 +108,7 @@ public class MembershipControllerTest {
     void verifyPayment_SuccessfulVerification_SetsActivatedAtAndExpiresAt() throws Exception {
         Mockito.when(userRepository.findByMobile("+919000000000")).thenReturn(Optional.of(mockUser));
         Mockito.when(workerProfileRepository.findByUserId(1L)).thenReturn(Optional.of(mockProfile));
-        Mockito.when(workerMembershipRepository.findByPaymentOrderId("order_mock_123")).thenReturn(Optional.of(pendingMembership));
+        Mockito.when(workerMembershipRepository.findByPaymentOrderIdWithLock("order_mock_123")).thenReturn(Optional.of(pendingMembership));
 
         PaymentVerificationRequest request = new PaymentVerificationRequest();
         request.setRazorpayOrderId("order_mock_123");
@@ -159,7 +159,7 @@ public class MembershipControllerTest {
                 .paymentOrderId("order_real_123")
                 .build();
         
-        Mockito.when(workerMembershipRepository.findByPaymentOrderId("order_real_123")).thenReturn(Optional.of(realOrderMembership));
+        Mockito.when(workerMembershipRepository.findByPaymentOrderIdWithLock("order_real_123")).thenReturn(Optional.of(realOrderMembership));
 
         PaymentVerificationRequest request = new PaymentVerificationRequest();
         request.setRazorpayOrderId("order_real_123");
@@ -198,7 +198,7 @@ public class MembershipControllerTest {
                 .build();
         expiredMembership.setId(200L);
         
-        Mockito.when(workerMembershipRepository.findByPaymentOrderId("order_mock_456")).thenReturn(Optional.of(expiredMembership));
+        Mockito.when(workerMembershipRepository.findByPaymentOrderIdWithLock("order_mock_456")).thenReturn(Optional.of(expiredMembership));
 
         PaymentVerificationRequest request = new PaymentVerificationRequest();
         request.setRazorpayOrderId("order_mock_456");
@@ -241,7 +241,7 @@ public class MembershipControllerTest {
                 .expiresAt(expired)
                 .build();
         
-        Mockito.when(workerMembershipRepository.findByPaymentOrderId("order_mock_active")).thenReturn(Optional.of(activeMembership));
+        Mockito.when(workerMembershipRepository.findByPaymentOrderIdWithLock("order_mock_active")).thenReturn(Optional.of(activeMembership));
 
         PaymentVerificationRequest request = new PaymentVerificationRequest();
         request.setRazorpayOrderId("order_mock_active");
@@ -385,7 +385,7 @@ public class MembershipControllerTest {
                 .build();
         membership.setId(300L);
 
-        Mockito.when(workerMembershipRepository.findByPaymentOrderId("order_mock_renew")).thenReturn(Optional.of(membership));
+        Mockito.when(workerMembershipRepository.findByPaymentOrderIdWithLock("order_mock_renew")).thenReturn(Optional.of(membership));
 
         PaymentVerificationRequest request = new PaymentVerificationRequest();
         request.setRazorpayOrderId("order_mock_renew");
@@ -425,7 +425,7 @@ public class MembershipControllerTest {
                 .expiresAt(expires)
                 .build();
 
-        Mockito.when(workerMembershipRepository.findByPaymentOrderId("order_mock_renew")).thenReturn(Optional.of(membership));
+        Mockito.when(workerMembershipRepository.findByPaymentOrderIdWithLock("order_mock_renew")).thenReturn(Optional.of(membership));
 
         PaymentVerificationRequest request = new PaymentVerificationRequest();
         request.setRazorpayOrderId("order_mock_renew");
@@ -462,7 +462,7 @@ public class MembershipControllerTest {
                 .expiresAt(null)
                 .build();
 
-        Mockito.when(workerMembershipRepository.findByPaymentOrderId("order_mock_renew")).thenReturn(Optional.of(membership));
+        Mockito.when(workerMembershipRepository.findByPaymentOrderIdWithLock("order_mock_renew")).thenReturn(Optional.of(membership));
 
         PaymentVerificationRequest request = new PaymentVerificationRequest();
         request.setRazorpayOrderId("order_mock_renew");
@@ -494,7 +494,7 @@ public class MembershipControllerTest {
                 .expiresAt(expires)
                 .build();
 
-        Mockito.when(workerMembershipRepository.findByPaymentOrderId("order_mock_renew")).thenReturn(Optional.of(membership));
+        Mockito.when(workerMembershipRepository.findByPaymentOrderIdWithLock("order_mock_renew")).thenReturn(Optional.of(membership));
 
         PaymentVerificationRequest request = new PaymentVerificationRequest();
         request.setRazorpayOrderId("order_mock_renew");
@@ -528,7 +528,7 @@ public class MembershipControllerTest {
                 .expiresAt(expires)
                 .build();
 
-        Mockito.when(workerMembershipRepository.findByPaymentOrderId("order_real_renew")).thenReturn(Optional.of(membership));
+        Mockito.when(workerMembershipRepository.findByPaymentOrderIdWithLock("order_real_renew")).thenReturn(Optional.of(membership));
 
         PaymentVerificationRequest request = new PaymentVerificationRequest();
         request.setRazorpayOrderId("order_real_renew");

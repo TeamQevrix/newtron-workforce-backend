@@ -120,7 +120,7 @@ public class WorkerAgreementController {
         agreement = agreementRepository.save(agreement);
 
         Application application = agreement.getApplication();
-        application.setStatus("Offered");
+        application.setStatus("Hired");
         applicationRepository.save(application);
 
         if (workOrderRepository.findByAgreementId(agreement.getId()).isEmpty()) {

@@ -68,25 +68,53 @@ public class WorkerAppliedJobsController {
         String companyName = "Newtron Client";
         String location = "";
         Double dailyWage = null;
+        Double wageAmount = null;
+        String wageType = null;
         String jobTitle = "";
         String jobId = "";
+        String clientPhone = null;
+        Double latitude = null;
+        Double longitude = null;
 
         if (job != null) {
             jobId = job.getId().toString();
             jobTitle = job.getTitle();
             location = job.getCity();
-            if (job.getRecruiter() != null && job.getRecruiter().getFullName() != null) {
+            if (job.getCompanyName() != null && !job.getCompanyName().isBlank()) {
+                companyName = job.getCompanyName();
+            } else if (job.getCompany() != null
+                    && job.getCompany().getCompanyName() != null
+                    && !job.getCompany().getCompanyName().isBlank()) {
+                companyName = job.getCompany().getCompanyName();
+            } else if (job.getRecruiter() != null
+                    && job.getRecruiter().getFullName() != null
+                    && !job.getRecruiter().getFullName().isBlank()) {
                 companyName = job.getRecruiter().getFullName();
             }
 
-            if (job.getSalary() != null) {
+            if (job.getMonthlySalaryAmount() != null) {
+                wageAmount = job.getMonthlySalaryAmount().doubleValue();
+                wageType = "MONTHLY";
+            } else if (job.getSalary() != null) {
                 try {
                     String cleanSalary = job.getSalary().replaceAll("[^0-9.]", "");
                     if (!cleanSalary.isEmpty()) {
                         dailyWage = Double.parseDouble(cleanSalary);
+                        wageAmount = dailyWage;
+                        wageType = "DAILY";
                     }
                 } catch (Exception e) {
                     dailyWage = null;
+                }
+            }
+        }
+
+        if ("Hired".equalsIgnoreCase(app.getStatus()) || "Completed".equalsIgnoreCase(app.getStatus())) {
+            if (job != null) {
+                latitude = job.getLatitude();
+                longitude = job.getLongitude();
+                if (job.getRecruiter() != null) {
+                    clientPhone = job.getRecruiter().getMobile();
                 }
             }
         }
@@ -101,9 +129,14 @@ public class WorkerAppliedJobsController {
                 .companyLogo("logo_default")
                 .location(location)
                 .dailyWage(dailyWage)
+                .wageAmount(wageAmount)
+                .wageType(wageType)
                 .appliedDate(app.getAppliedDate() != null ? app.getAppliedDate() : "")
                 .status(app.getStatus())
                 .recruiterViewed(!"Applied".equalsIgnoreCase(app.getStatus()))
+                .clientPhone(clientPhone)
+                .latitude(latitude)
+                .longitude(longitude)
                 .timeline(timeline)
                 .build();
     }

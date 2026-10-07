@@ -129,10 +129,19 @@ public class RazorpayWebhookController {
                                     }
                                     
                                     LocalDateTime currentExpiresAt = membership.getExpiresAt();
-                                    if (currentExpiresAt != null && currentExpiresAt.isAfter(now)) {
-                                        membership.setExpiresAt(currentExpiresAt.plusMonths(1));
+                                    if ("INDIVIDUAL_MONTHLY".equals(membership.getPlan())) {
+                                        // PAY-02: ₹49 Individual membership is valid for 6 months.
+                                        if (currentExpiresAt != null && currentExpiresAt.isAfter(now)) {
+                                            membership.setExpiresAt(currentExpiresAt.plusMonths(6));
+                                        } else {
+                                            membership.setExpiresAt(now.plusMonths(6));
+                                        }
                                     } else {
-                                        membership.setExpiresAt(now.plusMonths(1));
+                                        if (currentExpiresAt != null && currentExpiresAt.isAfter(now)) {
+                                            membership.setExpiresAt(currentExpiresAt.plusMonths(1));
+                                        } else {
+                                            membership.setExpiresAt(now.plusMonths(1));
+                                        }
                                     }
                                     
                                     workerMembershipRepository.save(membership);

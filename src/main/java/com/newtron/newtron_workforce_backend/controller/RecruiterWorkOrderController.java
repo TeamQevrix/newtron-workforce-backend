@@ -370,8 +370,13 @@ public class RecruiterWorkOrderController {
         
         Long workerProfileId = null;
         String workerName = null;
+        String workerPhone = null;
         if (workOrder.getWorker() != null) {
             workerName = workOrder.getWorker().getFullName();
+            if (workOrder.getStatus() == com.newtron.newtron_workforce_backend.enums.WorkOrderStatus.ACTIVE || 
+                workOrder.getStatus() == com.newtron.newtron_workforce_backend.enums.WorkOrderStatus.COMPLETED) {
+                workerPhone = workOrder.getWorker().getMobile();
+            }
             WorkerProfile workerProfile = workerProfileRepository.findByUserId(workOrder.getWorker().getId()).orElse(null);
             if (workerProfile != null) {
                 workerProfileId = workerProfile.getId();
@@ -382,6 +387,7 @@ public class RecruiterWorkOrderController {
         }
         response.put("workerProfileId", workerProfileId);
         response.put("workerName", workerName);
+        response.put("workerPhone", workerPhone);
 
         // Commercial
         response.put("engagementType", workOrder.getEngagementType());

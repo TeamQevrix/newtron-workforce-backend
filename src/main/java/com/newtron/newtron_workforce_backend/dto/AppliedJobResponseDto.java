@@ -15,9 +15,14 @@ public class AppliedJobResponseDto {
     private String company;
     private String companyLogo;
     private String location;
-    private Double dailyWage;
+    private Double dailyWage; // Keeping for backwards compatibility
+    private Double wageAmount;
+    private String wageType;
     private String appliedDate;
     private String status;
     private boolean recruiterViewed;
+    private String clientPhone;
+    private Double latitude;
+    private Double longitude;
     private List<TimelineStepDto> timeline;
 }

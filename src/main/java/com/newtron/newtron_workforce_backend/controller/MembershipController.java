@@ -177,7 +177,7 @@ public class MembershipController {
         WorkerProfile profile = fetchWorkerProfile(currentUser);
 
         // Find the pending membership
-        WorkerMembership membership = workerMembershipRepository.findByPaymentOrderId(request.getRazorpayOrderId())
+        WorkerMembership membership = workerMembershipRepository.findByPaymentOrderIdWithLock(request.getRazorpayOrderId())
                 .orElseThrow(() -> new ResourceNotFoundException("MEMBERSHIP_NOT_FOUND", "No membership order found for the provided order ID"));
 
         // Guard: Verify ownership
@@ -228,7 +228,7 @@ public class MembershipController {
                 membership.setActivatedAt(now);
             }
             if (PLAN_INDIVIDUAL.equals(membership.getPlan())) {
-                // PAY-02: ?49 Individual membership is valid for 6 months.
+                // PAY-02: ₹49 Individual membership is valid for 6 months.
                 membership.setExpiresAt(now.plusMonths(6));
             } else {
                 membership.setExpiresAt(now.plusMonths(1));
@@ -303,7 +303,7 @@ public class MembershipController {
             membership.setActivatedAt(now);
         }
         if (PLAN_INDIVIDUAL.equals(membership.getPlan())) {
-            // PAY-02: ?49 Individual membership is valid for 6 months.
+            // PAY-02: ₹49 Individual membership is valid for 6 months.
             membership.setExpiresAt(now.plusMonths(6));
         } else {
             membership.setExpiresAt(now.plusMonths(1));
@@ -427,7 +427,7 @@ public class MembershipController {
         User currentUser = fetchCurrentUser(userDetails);
         WorkerProfile profile = fetchWorkerProfile(currentUser);
 
-        WorkerMembership membership = workerMembershipRepository.findByPaymentOrderId(request.getRazorpayOrderId())
+        WorkerMembership membership = workerMembershipRepository.findByPaymentOrderIdWithLock(request.getRazorpayOrderId())
                 .orElseThrow(() -> new ResourceNotFoundException("MEMBERSHIP_NOT_FOUND", "No membership order found for the provided order ID"));
 
         if (!membership.getWorkerProfile().getId().equals(profile.getId())) {
@@ -512,7 +512,7 @@ public class MembershipController {
         LocalDateTime newExpiresAt;
 
         if (PLAN_INDIVIDUAL.equals(membership.getPlan())) {
-            // PAY-02: Extend ?49 Individual membership by 6 months.
+            // PAY-02: Extend ₹49 Individual membership by 6 months.
             if (currentExpiresAt.isAfter(now)) {
                 newExpiresAt = currentExpiresAt.plusMonths(6);
             } else {
