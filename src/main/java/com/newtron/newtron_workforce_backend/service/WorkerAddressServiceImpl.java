@@ -80,9 +80,16 @@ public class WorkerAddressServiceImpl implements WorkerAddressService {
         address.setAreaVillage(request.getAreaVillage());
         address.setPincode(request.getPincode());
         address.setCurrentAddress(request.getCurrentAddress());
-        address.setLandmark(request.getLandmark());
-        address.setLatitude(request.getLatitude());
-        address.setLongitude(request.getLongitude());
+        if (request.getLandmark() != null) {
+            String trimmed = request.getLandmark().trim();
+            address.setLandmark(trimmed.isEmpty() ? null : trimmed);
+        }
+        if (request.getLatitude() != null) {
+            address.setLatitude(request.getLatitude());
+        }
+        if (request.getLongitude() != null) {
+            address.setLongitude(request.getLongitude());
+        }
 
         WorkerAddress updated = workerAddressRepository.save(address);
 
